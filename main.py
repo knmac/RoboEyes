@@ -1,617 +1,1208 @@
-import pygame
-import sys
+"""RoboEyes - Animated robot eyes display with remote control support.
+
+Usage:
+    uv run main.py [OPTIONS]
+
+Options:
+    --rotate {0,90,180,270}   Screen rotation in degrees (default: 0)
+    --port PORT               UDP port for remote commands (default: 5005)
+    --bind ADDRESS            Bind address for UDP (default: 127.0.0.1)
+    --color R,G,B             Eye color (default: 0,255,255)
+    --bgcolor R,G,B           Background color (default: 0,0,0)
+    --width WIDTH             Canvas width in pixels (default: 640)
+    --height HEIGHT           Canvas height in pixels (default: 480)
+    --fullscreen              Run in fullscreen mode
+
+Keyboard Controls:
+    Esc         Quit
+    0/1/2/3/4   Mood: default / tired / angry / happy / squint
+    Arrow keys  Look direction (up/down/left/right)
+    Space       Reset look to center
+    b           Blink
+    q           Wink left
+    e           Wink right
+    c           Confused animation
+    l           Laugh animation
+    f           Toggle fullscreen
+    ?           Toggle key bindings overlay
+
+UDP Remote Commands (JSON):
+    Send JSON to the configured UDP port to control the eyes remotely.
+
+    {"mood": "happy"}                   Set mood (default/tired/angry/happy/squint)
+    {"look": "e"}                       Look direction (n/ne/e/se/s/sw/w/nw/center)
+    {"anim": "laugh"}                   Trigger animation (confused/laugh/blink/wink_left/wink_right)
+    {"color": [0, 200, 255]}            Set eye color [R, G, B]
+    {"bgcolor": [20, 20, 40]}           Set background color [R, G, B]
+    {"cyclops": true}                   Toggle single-eye mode
+    {"idle": true}                      Toggle idle random movement
+    {"autoblink": true}                 Toggle automatic blinking
+
+    Commands can be combined: {"mood": "angry", "look": "e", "color": [255, 50, 50]}
+
+    Example:
+        echo '{"mood":"happy","look":"w"}' | nc -u 127.0.0.1 5005
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
 import random
+import socket
+from collections.abc import Callable
+from dataclasses import dataclass
+from enum import IntEnum
+from typing import Any
 
-# Constants for colors
-BGCOLOR = (0, 0, 0)           # Black background
-MAINCOLOR = (255, 255, 255)   # White drawings
+import pygame
 
-# Mood Types
-DEFAULT = 0
-TIRED = 1
-ANGRY = 2
-HAPPY = 3
+Color = tuple[int, int, int]
 
-# Predefined Positions
-N = 1   # North, top center
-NE = 2  # North-east, top right
-E = 3   # East, middle right
-SE = 4  # South-east, bottom right
-S = 5   # South, bottom center
-SW = 6  # South-west, bottom left
-W = 7   # West, middle left
-NW = 8  # North-west, top left
+DEFAULT_BGCOLOR: Color = (0, 0, 0)
+DEFAULT_MAINCOLOR: Color = (0, 255, 255)
+
+MAX_UDP_MESSAGES_PER_FRAME: int = 10
+
+KEY_BINDINGS_LINES: list[str] = [
+    "Key Bindings",
+    "",
+    "Esc         Quit",
+    "0           Mood: default",
+    "1           Mood: tired",
+    "2           Mood: angry",
+    "3           Mood: happy",
+    "4           Mood: squint",
+    "Arrows      Look direction",
+    "Space       Center look",
+    "b           Blink",
+    "q           Wink left",
+    "e           Wink right",
+    "c           Confused",
+    "l           Laugh",
+    "f           Fullscreen",
+    "?           Toggle help",
+]
+
+
+class Mood(IntEnum):
+    """Eye mood expressions."""
+
+    DEFAULT = 0
+    TIRED = 1
+    ANGRY = 2
+    HAPPY = 3
+    SQUINT = 4
+
+
+class Position(IntEnum):
+    """Eye gaze directions."""
+
+    CENTER = 0
+    N = 1
+    NE = 2
+    E = 3
+    SE = 4
+    S = 5
+    SW = 6
+    W = 7
+    NW = 8
+
+
+MOOD_MAP: dict[str, Mood] = {m.name.lower(): m for m in Mood}
+POSITION_MAP: dict[str, Position] = {p.name.lower(): p for p in Position}
+
+POSITION_FACTORS: dict[Position, tuple[float, float]] = {
+    Position.CENTER: (0.5, 0.5),
+    Position.N:      (0.5, 0.0),
+    Position.NE:     (1.0, 0.0),
+    Position.E:      (1.0, 0.5),
+    Position.SE:     (1.0, 1.0),
+    Position.S:      (0.5, 1.0),
+    Position.SW:     (0.0, 1.0),
+    Position.W:      (0.0, 0.5),
+    Position.NW:     (0.0, 0.0),
+}
+
+
+@dataclass
+class EyeState:
+    """Holds the geometry and animation state for a single eye.
+
+    Attributes:
+        width_default: Default eye width in pixels.
+        height_default: Default eye height in pixels.
+        width_current: Current animated eye width.
+        height_current: Current animated eye height.
+        width_next: Target eye width for lerp.
+        height_next: Target eye height for lerp.
+        height_offset: Additional height from curiosity mode.
+        border_radius_default: Default corner radius.
+        border_radius_current: Current animated corner radius.
+        border_radius_next: Target corner radius for lerp.
+        x: Current X position on screen.
+        y: Current Y position on screen.
+        x_default: Default X position.
+        y_default: Default Y position.
+        x_next: Target X position for lerp.
+        y_next: Target Y position for lerp.
+        is_open: Whether the eye should re-open after closing.
+    """
+
+    width_default: int = 0
+    height_default: int = 0
+    width_current: int = 0
+    height_current: int = 1
+    width_next: int = 0
+    height_next: int = 0
+    height_offset: int = 0
+    border_radius_default: int = 0
+    border_radius_current: int = 0
+    border_radius_next: int = 0
+    x: int = 0
+    y: int = 0
+    x_default: int = 0
+    y_default: int = 0
+    x_next: int = 0
+    y_next: int = 0
+    is_open: bool = False
+
 
 class RoboEyes:
-    def __init__(self, draw_surface, width=320, height=240, frame_rate=50):
+    """Animated robot eyes display with mood, position, and animation support."""
+
+    def __init__(
+        self,
+        draw_surface: pygame.Surface,
+        width: int = 640,
+        height: int = 480,
+        bg_color: Color = DEFAULT_BGCOLOR,
+        eye_color: Color = DEFAULT_MAINCOLOR,
+    ) -> None:
+        """Initializes the RoboEyes display.
+
+        Args:
+            draw_surface: Pygame surface to draw on.
+            width: Canvas width in pixels (unrotated).
+            height: Canvas height in pixels (unrotated).
+            bg_color: Background color as (R, G, B).
+            eye_color: Eye color as (R, G, B).
         """
-        Initialize the RoboEyes class.
+        self.surface: pygame.Surface = draw_surface
+        self.screen_width: int = width
+        self.screen_height: int = height
+        self.bg_color: Color = bg_color
+        self.eye_color: Color = eye_color
 
-        :param draw_surface: Pygame surface to draw on.
-        :param width: Screen width in pixels (unrotated).
-        :param height: Screen height in pixels (unrotated).
-        :param frame_rate: Maximum frames per second.
-        """
-        self.surface = draw_surface
-        self.screen_width = width
-        self.screen_height = height
-        self.frame_interval = 1000 / frame_rate  # in milliseconds
-        self.fps_timer = pygame.time.get_ticks()
+        # Mood flags
+        self.current_mood: Mood = Mood.DEFAULT
+        self.tired: bool = False
+        self.angry: bool = False
+        self.happy: bool = False
+        self.curious: bool = False
+        self.squint: bool = False
+        self.cyclops: bool = False
 
-        # Mood and expressions
-        self.tired = False
-        self.angry = False
-        self.happy = False
-        self.curious = False
-        self.cyclops = False
-        self.eyeL_open = False
-        self.eyeR_open = False
+        # Scale factor relative to reference resolution (320x240)
+        # Eye sizes and spacing are defined at 320x240 and scaled up
+        self.scale: float = min(width / 320, height / 240)
 
-        # Eye Geometry
-        self.space_between_default = 10  # Reduced space for larger eyes
-        self.space_between_current = self.space_between_default
-        self.space_between_next = self.space_between_default
+        # Eye geometry
+        self.space_between_default: int = int(10 * self.scale)
+        self.space_between_current: int = self.space_between_default
+        self.space_between_next: int = self.space_between_default
 
-        # Left Eye
-        self.eyeLwidth_default = 100   # Increased size proportionally
-        self.eyeLheight_default = 100
-        self.eyeLwidth_current = self.eyeLwidth_default
-        self.eyeLheight_current = 1  # start with closed eye
-        self.eyeLwidth_next = self.eyeLwidth_default
-        self.eyeLheight_next = self.eyeLheight_default
-        self.eyeLheight_offset = 0
+        eye_w: int = int(100 * self.scale)
+        eye_h: int = int(100 * self.scale)
+        border_r: int = int(20 * self.scale)
 
-        self.eyeLborder_radius_default = 20  # Increased radius for larger eyes
-        self.eyeLborder_radius_current = self.eyeLborder_radius_default
-        self.eyeLborder_radius_next = self.eyeLborder_radius_default
+        self.left: EyeState = EyeState(
+            width_default=eye_w, height_default=eye_h,
+            width_current=eye_w, height_current=1,
+            width_next=eye_w, height_next=eye_h,
+            border_radius_default=border_r,
+            border_radius_current=border_r,
+            border_radius_next=border_r,
+        )
+        self.right: EyeState = EyeState(
+            width_default=eye_w, height_default=eye_h,
+            width_current=eye_w, height_current=1,
+            width_next=eye_w, height_next=eye_h,
+            border_radius_default=border_r,
+            border_radius_current=border_r,
+            border_radius_next=border_r,
+        )
 
-        # Right Eye
-        self.eyeRwidth_default = self.eyeLwidth_default
-        self.eyeRheight_default = self.eyeLheight_default
-        self.eyeRwidth_current = self.eyeRwidth_default
-        self.eyeRheight_current = 1  # start with closed eye
-        self.eyeRwidth_next = self.eyeRwidth_default
-        self.eyeRheight_next = self.eyeRheight_default
-        self.eyeRheight_offset = 0
+        # Default positions
+        self.left.x_default = (self.screen_width - (eye_w + self.space_between_default + eye_w)) // 2
+        self.left.y_default = (self.screen_height - eye_h) // 2
+        self.left.x = self.left.x_default
+        self.left.y = self.left.y_default
+        self.left.x_next = self.left.x
+        self.left.y_next = self.left.y
 
-        self.eyeRborder_radius_default = 20
-        self.eyeRborder_radius_current = self.eyeRborder_radius_default
-        self.eyeRborder_radius_next = self.eyeRborder_radius_default
+        self.right.x_default = self.left.x + self.left.width_current + self.space_between_default
+        self.right.y_default = self.left.y
+        self.right.x = self.right.x_default
+        self.right.y = self.right.y_default
+        self.right.x_next = self.right.x
+        self.right.y_next = self.right.y
 
-        # Coordinates
-        self.eyeLx_default = (self.screen_width - (self.eyeLwidth_default + self.space_between_default + self.eyeRwidth_default)) // 2
-        self.eyeLy_default = (self.screen_height - self.eyeLheight_default) // 2
-        self.eyeLx = self.eyeLx_default
-        self.eyeLy = self.eyeLy_default
-        self.eyeLx_next = self.eyeLx
-        self.eyeLy_next = self.eyeLy
+        # Eyelid state
+        self.eyelids_tired_height: int = 0
+        self.eyelids_tired_height_next: int = 0
+        self.eyelids_angry_height: int = 0
+        self.eyelids_angry_height_next: int = 0
+        self.eyelids_happy_bottom_offset: int = 0
+        self.eyelids_happy_bottom_offset_next: int = 0
 
-        self.eyeRx_default = self.eyeLx + self.eyeLwidth_current + self.space_between_default
-        self.eyeRy_default = self.eyeLy
-        self.eyeRx = self.eyeRx_default
-        self.eyeRy = self.eyeRy_default
-        self.eyeRx_next = self.eyeRx
-        self.eyeRy_next = self.eyeRy
+        # Flicker animations
+        self.h_flicker: bool = False
+        self.h_flicker_alternate: bool = False
+        self.h_flicker_amplitude: int = int(4 * self.scale)
 
-        # Both Eyes
-        self.eyelids_height_max = self.eyeLheight_default // 2
-        self.eyelids_tired_height = 0
-        self.eyelids_tired_height_next = self.eyelids_tired_height
-        self.eyelids_angry_height = 0
-        self.eyelids_angry_height_next = self.eyelids_angry_height
-        self.eyelids_happy_bottom_offset_max = (self.eyeLheight_default // 2) + 6  # Adjusted for larger eyes
-        self.eyelids_happy_bottom_offset = 0
-        self.eyelids_happy_bottom_offset_next = 0
+        self.v_flicker: bool = False
+        self.v_flicker_alternate: bool = False
+        self.v_flicker_amplitude: int = int(20 * self.scale)
 
-        # Macro Animations
-        self.hFlicker = False
-        self.hFlicker_alternate = False
-        self.hFlicker_amplitude = 4  # Increased amplitude for larger screen
+        # Auto-blinker
+        self.autoblinker: bool = False
+        self.blink_interval: int = 2000
+        self.blink_interval_variation: int = 4000
+        self.blink_timer: int = pygame.time.get_ticks()
 
-        self.vFlicker = False
-        self.vFlicker_alternate = False
-        self.vFlicker_amplitude = 20  # Increased amplitude for larger screen
+        # Idle mode
+        self.idle: bool = False
+        self.idle_interval: int = 5000
+        self.idle_interval_variation: int = 5000
+        self.idle_animation_timer: int = pygame.time.get_ticks()
 
-        self.autoblinker = False
-        self.blink_interval = 2000  # in milliseconds (2 seconds)
-        self.blink_interval_variation = 4000  # in milliseconds
-        self.blink_timer = pygame.time.get_ticks()
+        # Wink tracking (distinguishes intentional wink from normal blink)
+        self._winking: bool = False
 
-        self.idle = False
-        self.idle_interval = 5000  # in milliseconds (5 seconds)
-        self.idle_interval_variation = 5000  # in milliseconds
-        self.idle_animation_timer = pygame.time.get_ticks()
+        # Confused animation
+        self.confused: bool = False
+        self.confused_animation_timer: int = 0
+        self.confused_animation_duration: int = 500
+        self.confused_toggle: bool = True
 
-        self.confused = False
-        self.confused_animation_timer = 0
-        self.confused_animation_duration = 500  # in milliseconds
-        self.confused_toggle = True
+        # Laugh animation
+        self.laugh: bool = False
+        self.laugh_animation_timer: int = 0
+        self.laugh_animation_duration: int = 500
+        self.laugh_toggle: bool = True
 
-        self.laugh = False
-        self.laugh_animation_timer = 0
-        self.laugh_animation_duration = 500  # in milliseconds
-        self.laugh_toggle = True
-
-    # General Setup
-    def begin(self):
+    def begin(self) -> None:
+        """Initializes the display and starts with eyes closed."""
         self.clear_display()
-        self.eyeLheight_current = 1
-        self.eyeRheight_current = 1
+        self.left.height_current = 1
+        self.right.height_current = 1
 
-    def update(self):
-        current_time = pygame.time.get_ticks()
-        if current_time - self.fps_timer >= self.frame_interval:
-            self.drawEyes()
-            self.fps_timer = current_time
+    def update(self) -> None:
+        """Runs one frame of the eye animation loop."""
+        self._draw_eyes()
 
-    # Setter Methods
-    def setFramerate(self, fps):
-        self.frame_interval = 1000 / fps
+    def set_width(self, left_eye: int, right_eye: int) -> None:
+        """Sets the default and target width for both eyes.
 
-    def setWidth(self, leftEye, rightEye):
-        self.eyeLwidth_next = leftEye
-        self.eyeRwidth_next = rightEye
-        self.eyeLwidth_default = leftEye
-        self.eyeRwidth_default = rightEye
+        Args:
+            left_eye: Width in pixels for the left eye.
+            right_eye: Width in pixels for the right eye.
+        """
+        self.left.width_next = left_eye
+        self.right.width_next = right_eye
+        self.left.width_default = left_eye
+        self.right.width_default = right_eye
 
-    def setHeight(self, leftEye, rightEye):
-        self.eyeLheight_next = leftEye
-        self.eyeRheight_next = rightEye
-        self.eyeLheight_default = leftEye
-        self.eyeRheight_default = rightEye
+    def set_height(self, left_eye: int, right_eye: int) -> None:
+        """Sets the default and target height for both eyes.
 
-    def setBorderradius(self, leftEye, rightEye):
-        self.eyeLborder_radius_next = leftEye
-        self.eyeRborder_radius_next = rightEye
-        self.eyeLborder_radius_default = leftEye
-        self.eyeRborder_radius_default = rightEye
+        Args:
+            left_eye: Height in pixels for the left eye.
+            right_eye: Height in pixels for the right eye.
+        """
+        self.left.height_next = left_eye
+        self.right.height_next = right_eye
+        self.left.height_default = left_eye
+        self.right.height_default = right_eye
 
-    def setSpacebetween(self, space):
+    def set_border_radius(self, left_eye: int, right_eye: int) -> None:
+        """Sets the default and target border radius for both eyes.
+
+        Args:
+            left_eye: Border radius in pixels for the left eye.
+            right_eye: Border radius in pixels for the right eye.
+        """
+        self.left.border_radius_next = left_eye
+        self.right.border_radius_next = right_eye
+        self.left.border_radius_default = left_eye
+        self.right.border_radius_default = right_eye
+
+    def set_space_between(self, space: int) -> None:
+        """Sets the default and target spacing between eyes.
+
+        Args:
+            space: Space in pixels between left and right eyes.
+        """
         self.space_between_next = space
         self.space_between_default = space
 
-    def setMood(self, mood):
-        if mood == TIRED:
-            self.tired = True
-            self.angry = False
-            self.happy = False
-        elif mood == ANGRY:
-            self.tired = False
-            self.angry = True
-            self.happy = False
-        elif mood == HAPPY:
-            self.tired = False
-            self.angry = False
-            self.happy = True
-        else:
-            self.tired = False
-            self.angry = False
-            self.happy = False
+    def set_mood(self, mood: Mood) -> None:
+        """Sets the current mood expression.
 
-    def setPosition(self, position):
-        if position == N:
-            self.eyeLx_next = self.getScreenConstraint_X() // 2
-            self.eyeLy_next = 0
-        elif position == NE:
-            self.eyeLx_next = self.getScreenConstraint_X()
-            self.eyeLy_next = 0
-        elif position == E:
-            self.eyeLx_next = self.getScreenConstraint_X()
-            self.eyeLy_next = self.getScreenConstraint_Y() // 2
-        elif position == SE:
-            self.eyeLx_next = self.getScreenConstraint_X()
-            self.eyeLy_next = self.getScreenConstraint_Y()
-        elif position == S:
-            self.eyeLx_next = self.getScreenConstraint_X() // 2
-            self.eyeLy_next = self.getScreenConstraint_Y()
-        elif position == SW:
-            self.eyeLx_next = 0
-            self.eyeLy_next = self.getScreenConstraint_Y()
-        elif position == W:
-            self.eyeLx_next = 0
-            self.eyeLy_next = self.getScreenConstraint_Y() // 2
-        elif position == NW:
-            self.eyeLx_next = 0
-            self.eyeLy_next = 0
-        else:
-            # Default: Middle center
-            self.eyeLx_next = self.getScreenConstraint_X() // 2
-            self.eyeLy_next = self.getScreenConstraint_Y() // 2
-
-    def setAutoblinker(self, active, interval=2, variation=4):
+        Args:
+            mood: The mood to display.
         """
-        Set automated eye blinking.
+        self.current_mood = mood
+        self.tired = mood == Mood.TIRED
+        self.angry = mood == Mood.ANGRY
+        self.happy = mood == Mood.HAPPY
+        self.squint = mood == Mood.SQUINT
 
-        :param active: Boolean to activate/deactivate autoblinker.
-        :param interval: Basic interval between each blink in seconds.
-        :param variation: Interval variation range in seconds.
+    def set_position(self, position: Position) -> None:
+        """Sets the gaze direction using a compass position.
+
+        Args:
+            position: The direction to look toward.
+        """
+        fx, fy = POSITION_FACTORS[position]
+        self.left.x_next = int(self._screen_constraint_x() * fx)
+        self.left.y_next = int(self._screen_constraint_y() * fy)
+
+    def set_autoblinker(self, active: bool, interval: int = 2, variation: int = 4) -> None:
+        """Configures automated eye blinking.
+
+        Args:
+            active: Whether to enable automatic blinking.
+            interval: Base interval between blinks in seconds.
+            variation: Random variation range in seconds added to interval.
         """
         self.autoblinker = active
-        self.blink_interval = interval * 1000  # convert to milliseconds
-        self.blink_interval_variation = variation * 1000  # convert to milliseconds
+        self.blink_interval = interval * 1000
+        self.blink_interval_variation = variation * 1000
 
-    def setIdleMode(self, active, interval=5, variation=5):
-        """
-        Set idle mode for automated eye repositioning.
+    def set_idle_mode(self, active: bool, interval: int = 5, variation: int = 5) -> None:
+        """Configures idle mode for random eye repositioning.
 
-        :param active: Boolean to activate/deactivate idle mode.
-        :param interval: Basic interval between each repositioning in seconds.
-        :param variation: Interval variation range in seconds.
+        Args:
+            active: Whether to enable idle movement.
+            interval: Base interval between movements in seconds.
+            variation: Random variation range in seconds added to interval.
         """
         self.idle = active
-        self.idle_interval = interval * 1000  # convert to milliseconds
-        self.idle_interval_variation = variation * 1000  # convert to milliseconds
+        self.idle_interval = interval * 1000
+        self.idle_interval_variation = variation * 1000
 
-    def setCuriosity(self, curious_bit):
+    def set_curiosity(self, curious_bit: bool) -> None:
+        """Enables or disables curiosity mode.
+
+        When enabled, eyes grow taller when looking toward screen edges.
+
+        Args:
+            curious_bit: Whether to enable curiosity mode.
+        """
         self.curious = curious_bit
 
-    def setCyclops(self, cyclops_bit):
+    def set_cyclops(self, cyclops_bit: bool) -> None:
+        """Enables or disables cyclops (single-eye) mode.
+
+        Args:
+            cyclops_bit: Whether to enable cyclops mode.
+        """
         self.cyclops = cyclops_bit
 
-    def setHFlicker(self, flicker_bit, amplitude=4):
-        self.hFlicker = flicker_bit
-        self.hFlicker_amplitude = amplitude
+    def set_h_flicker(self, flicker_bit: bool, amplitude: int = 4) -> None:
+        """Enables or disables horizontal flicker animation.
 
-    def setVFlicker(self, flicker_bit, amplitude=20):
-        self.vFlicker = flicker_bit
-        self.vFlicker_amplitude = amplitude
+        Args:
+            flicker_bit: Whether to enable horizontal flicker.
+            amplitude: Flicker displacement in pixels.
+        """
+        self.h_flicker = flicker_bit
+        self.h_flicker_amplitude = amplitude
 
-    # Getter Methods
-    def getScreenConstraint_X(self):
-        return self.screen_width - self.eyeLwidth_current - self.space_between_current - self.eyeRwidth_current
+    def set_v_flicker(self, flicker_bit: bool, amplitude: int = 20) -> None:
+        """Enables or disables vertical flicker animation.
 
-    def getScreenConstraint_Y(self):
-        return self.screen_height - self.eyeLheight_default  # Using default height
+        Args:
+            flicker_bit: Whether to enable vertical flicker.
+            amplitude: Flicker displacement in pixels.
+        """
+        self.v_flicker = flicker_bit
+        self.v_flicker_amplitude = amplitude
 
-    # Blinking Methods
-    def close(self, left=True, right=True):
+    def close(self, left: bool = True, right: bool = True) -> None:
+        """Closes the specified eyes by setting their height target to 1.
+
+        Args:
+            left: Whether to close the left eye.
+            right: Whether to close the right eye.
+        """
         if left:
-            self.eyeLheight_next = 1
-            self.eyeL_open = False
+            self.left.height_next = 1
+            self.left.is_open = False
         if right:
-            self.eyeRheight_next = 1
-            self.eyeR_open = False
+            self.right.height_next = 1
+            self.right.is_open = False
 
-    def open_eyes(self, left=True, right=True):
+    def open_eyes(self, left: bool = True, right: bool = True) -> None:
+        """Marks the specified eyes to re-open after closing.
+
+        Args:
+            left: Whether to re-open the left eye.
+            right: Whether to re-open the right eye.
+        """
         if left:
-            self.eyeL_open = True
+            self.left.is_open = True
         if right:
-            self.eyeR_open = True
+            self.right.is_open = True
 
-    def blink(self, left=True, right=True):
+    def blink(self, left: bool = True, right: bool = True) -> None:
+        """Triggers a blink animation (close then re-open).
+
+        Args:
+            left: Whether to blink the left eye.
+            right: Whether to blink the right eye.
+        """
         self.close(left, right)
         self.open_eyes(left, right)
 
-    # Macro Animation Methods
-    def anim_confused(self):
+    def wink_left(self) -> None:
+        """Triggers a wink with the left eye only."""
+        self._winking = True
+        self.blink(left=True, right=False)
+
+    def wink_right(self) -> None:
+        """Triggers a wink with the right eye only."""
+        self._winking = True
+        self.blink(left=False, right=True)
+
+    def anim_confused(self) -> None:
+        """Triggers the confused (horizontal shake) animation."""
         self.confused = True
 
-    def anim_laugh(self):
+    def anim_laugh(self) -> None:
+        """Triggers the laugh (vertical bounce) animation."""
         self.laugh = True
 
-    # Drawing Methods
-    def drawEyes(self):
-        current_time = pygame.time.get_ticks()
+    def clear_display(self) -> None:
+        """Fills the draw surface with the background color."""
+        self.surface.fill(self.bg_color)
 
-        # Pre-Calculations
+    # -- Private helpers --
+
+    def _lerp(self, current: int, target: int) -> int:
+        """Smoothly interpolates an integer value toward a target.
+
+        Uses halving with a nudge to guarantee convergence even when
+        integer division would otherwise stall.
+
+        Args:
+            current: The current value.
+            target: The target value to move toward.
+
+        Returns:
+            The next interpolated value.
+        """
+        if current == target:
+            return current
+        mid = (current + target) // 2
+        if mid == current:
+            return target
+        return mid
+
+    def _screen_constraint_x(self) -> int:
+        """Returns the maximum X offset for the left eye position."""
+        return self.screen_width - self.left.width_current - self.space_between_current - self.right.width_current
+
+    def _screen_constraint_y(self) -> int:
+        """Returns the maximum Y offset for eye positioning."""
+        return self.screen_height - self.left.height_default
+
+    def _update_eye_geometry(self, eye: EyeState) -> None:
+        """Advances a single eye's dimensions and position toward their targets.
+
+        Args:
+            eye: The eye state to update in place.
+        """
+        eye.height_current = self._lerp(eye.height_current, eye.height_next + eye.height_offset)
+        eye.width_current = self._lerp(eye.width_current, eye.width_next)
+        eye.border_radius_current = self._lerp(eye.border_radius_current, eye.border_radius_next)
+
+        # Compute Y target: center-adjust for current height, then offset
+        target_y = eye.y_next + (eye.height_default - eye.height_current) // 2
+        target_y -= eye.height_offset // 2
+        eye.y = self._lerp(eye.y, target_y)
+
+        eye.x = self._lerp(eye.x, eye.x_next)
+
+        # Re-open after close animation completes
+        if eye.is_open and eye.height_current <= 1 + eye.height_offset:
+            eye.height_next = eye.height_default
+
+    def _compute_curiosity_offsets(self) -> None:
+        """Sets height offsets on both eyes based on gaze position.
+
+        Eyes grow taller when looking toward the edges of the screen,
+        creating a curious expression.
+        """
+        threshold: int = int(20 * self.scale)
+        offset: int = int(16 * self.scale)
+
         if self.curious:
-            if self.eyeLx_next <= 20:  # Adjusted threshold for larger screen
-                self.eyeLheight_offset = 16
-            elif self.eyeLx_next >= (self.getScreenConstraint_X() - 20) and self.cyclops:
-                self.eyeLheight_offset = 16
+            if self.left.x_next <= threshold:
+                self.left.height_offset = offset
+            elif self.left.x_next >= (self._screen_constraint_x() - threshold) and self.cyclops:
+                self.left.height_offset = offset
             else:
-                self.eyeLheight_offset = 0  # left eye
+                self.left.height_offset = 0
 
-            if self.eyeRx_next >= self.screen_width - self.eyeRwidth_current - 20:
-                self.eyeRheight_offset = 16
+            if self.right.x_next >= self.screen_width - self.right.width_current - threshold:
+                self.right.height_offset = offset
             else:
-                self.eyeRheight_offset = 0  # right eye
+                self.right.height_offset = 0
         else:
-            self.eyeLheight_offset = 0
-            self.eyeRheight_offset = 0
+            self.left.height_offset = 0
+            self.right.height_offset = 0
 
-        # Left eye height
-        self.eyeLheight_current = (self.eyeLheight_current + self.eyeLheight_next + self.eyeLheight_offset) // 2
-        self.eyeLy += ((self.eyeLheight_default - self.eyeLheight_current) // 2)
-        self.eyeLy -= self.eyeLheight_offset // 2
+    def _draw_eyes(self) -> None:
+        """Main drawing routine that updates state and renders one frame."""
+        current_time: int = pygame.time.get_ticks()
 
-        # Right eye height
-        self.eyeRheight_current = (self.eyeRheight_current + self.eyeRheight_next + self.eyeRheight_offset) // 2
-        self.eyeRy += ((self.eyeRheight_default - self.eyeRheight_current) // 2)
-        self.eyeRy -= self.eyeRheight_offset // 2
+        self._compute_curiosity_offsets()
 
-        # Open eyes again after closing them
-        if self.eyeL_open:
-            if self.eyeLheight_current <= 1 + self.eyeLheight_offset:
-                self.eyeLheight_next = self.eyeLheight_default
+        # Update geometry for both eyes
+        self._update_eye_geometry(self.left)
 
-        if self.eyeR_open:
-            if self.eyeRheight_current <= 1 + self.eyeRheight_offset:
-                self.eyeRheight_next = self.eyeRheight_default
-
-        # Left eye width
-        self.eyeLwidth_current = (self.eyeLwidth_current + self.eyeLwidth_next) // 2
-
-        # Right eye width
-        self.eyeRwidth_current = (self.eyeRwidth_current + self.eyeRwidth_next) // 2
+        # Right eye tracks left eye position
+        self.right.x_next = self.left.x_next + self.left.width_current + self.space_between_current
+        self.right.y_next = self.left.y_next
+        self._update_eye_geometry(self.right)
 
         # Space between eyes
-        self.space_between_current = (self.space_between_current + self.space_between_next) // 2
+        self.space_between_current = self._lerp(self.space_between_current, self.space_between_next)
 
-        # Left eye coordinates
-        self.eyeLx = (self.eyeLx + self.eyeLx_next) // 2
-        self.eyeLy = (self.eyeLy + self.eyeLy_next) // 2
-
-        # Right eye coordinates
-        self.eyeRx_next = self.eyeLx_next + self.eyeLwidth_current + self.space_between_current
-        self.eyeRy_next = self.eyeLy_next
-        self.eyeRx = (self.eyeRx + self.eyeRx_next) // 2
-        self.eyeRy = (self.eyeRy + self.eyeRy_next) // 2
-
-        # Left eye border radius
-        self.eyeLborder_radius_current = (self.eyeLborder_radius_current + self.eyeLborder_radius_next) // 2
-
-        # Right eye border radius
-        self.eyeRborder_radius_current = (self.eyeRborder_radius_current + self.eyeRborder_radius_next) // 2
-
-        # Apply Macro Animations
-        if self.autoblinker and (current_time >= self.blink_timer):
+        # Auto-blinker
+        if self.autoblinker and current_time >= self.blink_timer:
             self.blink()
             variation = random.randint(0, self.blink_interval_variation)
             self.blink_timer = current_time + self.blink_interval + variation
 
-        # Laugh Animation
+        # Laugh animation
         if self.laugh:
             if self.laugh_toggle:
-                self.setVFlicker(True, 10)  # Increased amplitude for larger screen
+                self.set_v_flicker(True, int(10 * self.scale))
                 self.laugh_animation_timer = current_time
                 self.laugh_toggle = False
             elif current_time >= self.laugh_animation_timer + self.laugh_animation_duration:
-                self.setVFlicker(False, 0)
+                self.set_v_flicker(False, 0)
                 self.laugh_toggle = True
                 self.laugh = False
 
-        # Confused Animation
+        # Confused animation
         if self.confused:
             if self.confused_toggle:
-                self.setHFlicker(True, 40)  # Increased amplitude for larger screen
+                self.set_h_flicker(True, int(40 * self.scale))
                 self.confused_animation_timer = current_time
                 self.confused_toggle = False
             elif current_time >= self.confused_animation_timer + self.confused_animation_duration:
-                self.setHFlicker(False, 0)
+                self.set_h_flicker(False, 0)
                 self.confused_toggle = True
                 self.confused = False
 
-        # Idle Animation
-        if self.idle and (current_time >= self.idle_animation_timer):
-            self.eyeLx_next = random.randint(0, self.getScreenConstraint_X())
-            self.eyeLy_next = random.randint(0, self.getScreenConstraint_Y())
+        # Idle animation
+        if self.idle and current_time >= self.idle_animation_timer:
+            self.left.x_next = random.randint(0, self._screen_constraint_x())
+            self.left.y_next = random.randint(0, self._screen_constraint_y())
             variation = random.randint(0, self.idle_interval_variation)
             self.idle_animation_timer = current_time + self.idle_interval + variation
 
-        # Horizontal Flicker
-        if self.hFlicker:
-            if self.hFlicker_alternate:
-                self.eyeLx += self.hFlicker_amplitude
-                self.eyeRx += self.hFlicker_amplitude
-            else:
-                self.eyeLx -= self.hFlicker_amplitude
-                self.eyeRx -= self.hFlicker_amplitude
-            self.hFlicker_alternate = not self.hFlicker_alternate
+        # Horizontal flicker
+        if self.h_flicker:
+            amp: int = self.h_flicker_amplitude if self.h_flicker_alternate else -self.h_flicker_amplitude
+            self.left.x += amp
+            self.right.x += amp
+            self.h_flicker_alternate = not self.h_flicker_alternate
 
-        # Vertical Flicker
-        if self.vFlicker:
-            if self.vFlicker_alternate:
-                self.eyeLy += self.vFlicker_amplitude
-                self.eyeRy += self.vFlicker_amplitude
-            else:
-                self.eyeLy -= self.vFlicker_amplitude
-                self.eyeRy -= self.vFlicker_amplitude
-            self.vFlicker_alternate = not self.vFlicker_alternate
+        # Vertical flicker
+        if self.v_flicker:
+            amp = self.v_flicker_amplitude if self.v_flicker_alternate else -self.v_flicker_amplitude
+            self.left.y += amp
+            self.right.y += amp
+            self.v_flicker_alternate = not self.v_flicker_alternate
 
-        # Cyclops Mode
+        # Cyclops mode
         if self.cyclops:
-            self.eyeRwidth_current = 0
-            self.eyeRheight_current = 0
+            self.right.width_current = 0
+            self.right.height_current = 0
             self.space_between_current = 0
 
-        # Clear Display
+        # Squint: tighter gap
+        if self.squint:
+            self.space_between_current = min(self.space_between_current, int(8 * self.scale))
+
         self.clear_display()
 
-        # Draw Eyes
-        self.draw_eye(self.eyeLx, self.eyeLy, self.eyeLwidth_current, self.eyeLheight_current,
-                     self.eyeLborder_radius_current, MAINCOLOR)
+        # Determine squint/wink rendering
+        left_blinking: bool = self.left.height_current < self.left.height_default - 2
+        right_blinking: bool = self.right.height_current < self.right.height_default - 2
+
+        left_use_squint: bool = self.squint and not left_blinking
+        right_use_squint: bool = self.squint and not right_blinking
+
+        # During an intentional wink, the open eye shows squint
+        if self._winking and left_blinking != right_blinking:
+            if not self.squint:
+                left_use_squint = not left_blinking
+                right_use_squint = not right_blinking
+
+        # Clear wink flag once both eyes are fully open
+        if self._winking and not left_blinking and not right_blinking:
+            self._winking = False
+
+        # Draw left eye
+        if left_use_squint:
+            self._draw_x_eye(self.left, "left")
+        else:
+            self._draw_eye(self.left)
+
+        # Draw right eye
         if not self.cyclops:
-            self.draw_eye(self.eyeRx, self.eyeRy, self.eyeRwidth_current, self.eyeRheight_current,
-                         self.eyeRborder_radius_current, MAINCOLOR)
+            if right_use_squint:
+                self._draw_x_eye(self.right, "right")
+            else:
+                self._draw_eye(self.right)
 
-        # Mood Transitions
+        # Mood eyelid overlays (skip when squint is active)
+        if not left_use_squint and not right_use_squint:
+            self._draw_eyelids()
+
+    def _draw_eye(self, eye: EyeState) -> None:
+        """Draws a single rounded-rectangle eye.
+
+        Args:
+            eye: The eye state containing position and dimensions.
+        """
+        rect = pygame.Rect(eye.x, eye.y, eye.width_current, eye.height_current)
+        pygame.draw.rect(self.surface, self.eye_color, rect,
+                         border_radius=max(eye.border_radius_current, 0))
+
+    def _draw_x_eye(self, eye: EyeState, direction: str = "left") -> None:
+        """Draws a squint eye as a ``>`` or ``<`` shape using rotated rectangles.
+
+        Args:
+            eye: The eye state containing position and dimensions.
+            direction: ``"left"`` for ``<`` or ``"right"`` for ``>``.
+        """
+        cx: int = eye.x + eye.width_current // 2
+        cy: int = eye.y + eye.height_current // 2
+        sx: int = min(eye.width_current, eye.height_current) // 2
+        sy: int = sx * 2 // 3
+        t: int = max(sx // 2, 5)
+        br: int = t // 2
+
+        for sign in (-1, 1):
+            if direction == "left":
+                x1, y1 = cx - sx, cy + sign * sy
+                x2, y2 = cx + sx, cy
+            else:
+                x1, y1 = cx + sx, cy + sign * sy
+                x2, y2 = cx - sx, cy
+
+            dx: int = x2 - x1
+            dy: int = y2 - y1
+            length: int = int(math.hypot(dx, dy))
+            angle: float = math.degrees(math.atan2(-dy, dx))
+
+            arm = pygame.Surface((length, t), pygame.SRCALPHA)
+            pygame.draw.rect(arm, self.eye_color, (0, 0, length, t), border_radius=br)
+
+            rotated = pygame.transform.rotate(arm, angle)
+            mid_x: int = (x1 + x2) // 2
+            mid_y: int = (y1 + y2) // 2
+            rect = rotated.get_rect(center=(mid_x, mid_y))
+            self.surface.blit(rotated, rect)
+
+    def _draw_eyelids(self) -> None:
+        """Draws mood-based eyelid overlays (tired, angry, happy)."""
         if self.tired:
-            self.eyelids_tired_height_next = self.eyeLheight_current // 2
+            self.eyelids_tired_height_next = self.left.height_current // 2
             self.eyelids_angry_height_next = 0
-        else:
-            self.eyelids_tired_height_next = 0
-
-        if self.angry:
-            self.eyelids_angry_height_next = self.eyeLheight_current // 2
+        elif self.angry:
+            self.eyelids_angry_height_next = self.left.height_current // 2
             self.eyelids_tired_height_next = 0
         else:
+            self.eyelids_tired_height_next = 0
             self.eyelids_angry_height_next = 0
 
         if self.happy:
-            self.eyelids_happy_bottom_offset_next = self.eyeLheight_current // 2
+            self.eyelids_happy_bottom_offset_next = self.left.height_current * 2 // 3
         else:
             self.eyelids_happy_bottom_offset_next = 0
 
-        # Draw Tired Eyelids
-        self.eyelids_tired_height = (self.eyelids_tired_height + self.eyelids_tired_height_next) // 2
-        if not self.cyclops:
-            # Left Eye
-            points_left = [
-                (self.eyeLx, self.eyeLy - 1),
-                (self.eyeLx + self.eyeLwidth_current, self.eyeLy - 1),
-                (self.eyeLx, self.eyeLy + self.eyelids_tired_height - 1)
-            ]
-            pygame.draw.polygon(self.surface, BGCOLOR, points_left)
+        # Tired eyelids
+        self.eyelids_tired_height = self._lerp(self.eyelids_tired_height, self.eyelids_tired_height_next)
+        if self.eyelids_tired_height > 0:
+            if not self.cyclops:
+                self._draw_tired_eyelid_pair(self.left, self.right)
+            else:
+                self._draw_tired_eyelid_cyclops(self.left)
 
-            # Right Eye
-            points_right = [
-                (self.eyeRx, self.eyeRy - 1),
-                (self.eyeRx + self.eyeRwidth_current, self.eyeRy - 1),
-                (self.eyeRx + self.eyeRwidth_current, self.eyeRy + self.eyelids_tired_height - 1)
-            ]
-            pygame.draw.polygon(self.surface, BGCOLOR, points_right)
+        # Angry eyelids
+        self.eyelids_angry_height = self._lerp(self.eyelids_angry_height, self.eyelids_angry_height_next)
+        if self.eyelids_angry_height > 0:
+            if not self.cyclops:
+                self._draw_angry_eyelid_pair(self.left, self.right)
+            else:
+                self._draw_angry_eyelid_cyclops(self.left)
+
+        # Happy eyelids
+        self.eyelids_happy_bottom_offset = self._lerp(
+            self.eyelids_happy_bottom_offset, self.eyelids_happy_bottom_offset_next)
+        if self.eyelids_happy_bottom_offset > 0:
+            self._draw_happy_eyelid(self.left)
+            if not self.cyclops:
+                self._draw_happy_eyelid(self.right)
+
+    def _draw_tired_eyelid_pair(self, left: EyeState, right: EyeState) -> None:
+        """Draws tired eyelid triangles for both eyes in normal mode.
+
+        Args:
+            left: Left eye state.
+            right: Right eye state.
+        """
+        h: int = self.eyelids_tired_height
+        points_left = [
+            (left.x, left.y - 1),
+            (left.x + left.width_current, left.y - 1),
+            (left.x, left.y + h - 1),
+        ]
+        pygame.draw.polygon(self.surface, self.bg_color, points_left)
+
+        points_right = [
+            (right.x, right.y - 1),
+            (right.x + right.width_current, right.y - 1),
+            (right.x + right.width_current, right.y + h - 1),
+        ]
+        pygame.draw.polygon(self.surface, self.bg_color, points_right)
+
+    def _draw_tired_eyelid_cyclops(self, eye: EyeState) -> None:
+        """Draws tired eyelid triangles for cyclops mode.
+
+        Args:
+            eye: The single eye state.
+        """
+        h: int = self.eyelids_tired_height
+        half_w: int = eye.width_current // 2
+        points_left = [
+            (eye.x, eye.y - 1),
+            (eye.x + half_w, eye.y - 1),
+            (eye.x, eye.y + h - 1),
+        ]
+        pygame.draw.polygon(self.surface, self.bg_color, points_left)
+
+        points_right = [
+            (eye.x + half_w, eye.y - 1),
+            (eye.x + eye.width_current, eye.y - 1),
+            (eye.x + eye.width_current, eye.y + h - 1),
+        ]
+        pygame.draw.polygon(self.surface, self.bg_color, points_right)
+
+    def _draw_angry_eyelid_pair(self, left: EyeState, right: EyeState) -> None:
+        """Draws angry eyelid triangles for both eyes in normal mode.
+
+        Args:
+            left: Left eye state.
+            right: Right eye state.
+        """
+        h: int = self.eyelids_angry_height
+        points_left = [
+            (left.x, left.y - 1),
+            (left.x + left.width_current, left.y - 1),
+            (left.x + left.width_current, left.y + h - 1),
+        ]
+        pygame.draw.polygon(self.surface, self.bg_color, points_left)
+
+        points_right = [
+            (right.x, right.y - 1),
+            (right.x + right.width_current, right.y - 1),
+            (right.x, right.y + h - 1),
+        ]
+        pygame.draw.polygon(self.surface, self.bg_color, points_right)
+
+    def _draw_angry_eyelid_cyclops(self, eye: EyeState) -> None:
+        """Draws angry eyelid triangles for cyclops mode.
+
+        Args:
+            eye: The single eye state.
+        """
+        h: int = self.eyelids_angry_height
+        half_w: int = eye.width_current // 2
+        points_left = [
+            (eye.x, eye.y - 1),
+            (eye.x + half_w, eye.y - 1),
+            (eye.x + half_w, eye.y + h - 1),
+        ]
+        pygame.draw.polygon(self.surface, self.bg_color, points_left)
+
+        points_right = [
+            (eye.x + half_w, eye.y - 1),
+            (eye.x + eye.width_current, eye.y - 1),
+            (eye.x + half_w, eye.y + h - 1),
+        ]
+        pygame.draw.polygon(self.surface, self.bg_color, points_right)
+
+    def _draw_happy_eyelid(self, eye: EyeState) -> None:
+        """Draws a happy eyelid arc mask on the bottom of an eye.
+
+        Args:
+            eye: The eye state to draw the happy eyelid on.
+        """
+        mask_h: int = self.eyelids_happy_bottom_offset + eye.border_radius_current
+        mask_y: int = (eye.y + eye.height_current) - self.eyelids_happy_bottom_offset
+        mask_rect = pygame.Rect(eye.x - 2, mask_y,
+                                eye.width_current + 4, mask_h)
+        pygame.draw.rect(self.surface, self.bg_color, mask_rect,
+                         border_radius=eye.border_radius_current)
+
+
+def parse_color(s: str) -> Color:
+    """Parses an ``R,G,B`` string into a color tuple.
+
+    Args:
+        s: Comma-separated RGB string (e.g. ``"255,128,0"``).
+
+    Returns:
+        A ``(R, G, B)`` tuple of integers.
+
+    Raises:
+        argparse.ArgumentTypeError: If the string is not valid ``R,G,B``.
+    """
+    parts = s.split(",")
+    if len(parts) != 3:
+        raise argparse.ArgumentTypeError("Color must be R,G,B (e.g. 255,255,255)")
+    r, g, b = (int(x) for x in parts)
+    return (r, g, b)
+
+
+def validate_color(value: Any) -> Color | None:
+    """Validates a color value from UDP JSON input.
+
+    Args:
+        value: The raw value from a parsed JSON command.
+
+    Returns:
+        A valid ``(R, G, B)`` tuple, or ``None`` if validation fails.
+    """
+    if not isinstance(value, list) or len(value) != 3:
+        return None
+    if not all(isinstance(c, int) and 0 <= c <= 255 for c in value):
+        return None
+    return (value[0], value[1], value[2])
+
+
+def handle_command(cmd: Any, robo_eyes: RoboEyes) -> None:
+    """Handles a JSON command dict from UDP with input validation.
+
+    Silently ignores malformed or unrecognized fields so that one bad
+    field does not prevent the rest of the command from being processed.
+
+    Args:
+        cmd: A parsed JSON value (expected to be a dict).
+        robo_eyes: The RoboEyes instance to control.
+    """
+    if not isinstance(cmd, dict):
+        return
+
+    if "mood" in cmd and isinstance(cmd["mood"], str):
+        mood = MOOD_MAP.get(cmd["mood"].lower())
+        if mood is not None:
+            robo_eyes.set_mood(mood)
+
+    if "look" in cmd and isinstance(cmd["look"], str):
+        pos = POSITION_MAP.get(cmd["look"].lower())
+        if pos is not None:
+            robo_eyes.set_position(pos)
+
+    if "anim" in cmd and isinstance(cmd["anim"], str):
+        anim = cmd["anim"].lower()
+        anim_map: dict[str, Callable[[], None]] = {
+            "confused": robo_eyes.anim_confused,
+            "laugh": robo_eyes.anim_laugh,
+            "blink": robo_eyes.blink,
+            "wink_left": robo_eyes.wink_left,
+            "wink_right": robo_eyes.wink_right,
+        }
+        fn = anim_map.get(anim)
+        if fn:
+            fn()
+
+    if "color" in cmd:
+        color = validate_color(cmd["color"])
+        if color:
+            robo_eyes.eye_color = color
+
+    if "bgcolor" in cmd:
+        color = validate_color(cmd["bgcolor"])
+        if color:
+            robo_eyes.bg_color = color
+
+    if "cyclops" in cmd and isinstance(cmd["cyclops"], bool):
+        robo_eyes.set_cyclops(cmd["cyclops"])
+    if "idle" in cmd and isinstance(cmd["idle"], bool):
+        robo_eyes.set_idle_mode(cmd["idle"])
+    if "autoblink" in cmd and isinstance(cmd["autoblink"], bool):
+        robo_eyes.set_autoblinker(cmd["autoblink"])
+
+
+_help_overlay_cache: dict[tuple[int, int], pygame.Surface] = {}
+
+
+def _build_help_overlay(width: int, height: int) -> pygame.Surface:
+    """Builds a pre-rendered help overlay surface for the given dimensions.
+
+    Args:
+        width: Window width in pixels.
+        height: Window height in pixels.
+
+    Returns:
+        A transparent surface with the help text and background drawn on it.
+    """
+    font_size = max(14, height // 25)
+    font = pygame.font.SysFont("monospace", font_size)
+    line_height = font.get_linesize()
+
+    rendered = [font.render(line, True, (255, 255, 255)) for line in KEY_BINDINGS_LINES]
+    max_width = max(s.get_width() for s in rendered)
+    total_height = line_height * len(rendered)
+
+    padding = font_size
+    box_w = max_width + padding * 2
+    box_h = total_height + padding * 2
+
+    overlay = pygame.Surface((width, height), pygame.SRCALPHA)
+    box_x = (width - box_w) // 2
+    box_y = (height - box_h) // 2
+
+    # Semi-transparent background
+    pygame.draw.rect(overlay, (0, 0, 0, 180),
+                     (box_x, box_y, box_w, box_h))
+
+    # Draw text lines
+    y = box_y + padding
+    for text_surface in rendered:
+        overlay.blit(text_surface, (box_x + padding, y))
+        y += line_height
+
+    return overlay
+
+
+def draw_help_overlay(surface: pygame.Surface) -> None:
+    """Blits the cached key bindings overlay centered on the given surface.
+
+    The overlay is built once per window size and cached for reuse.
+
+    Args:
+        surface: The pygame surface to draw the overlay on.
+    """
+    size = surface.get_size()
+    if size not in _help_overlay_cache:
+        _help_overlay_cache[size] = _build_help_overlay(*size)
+    surface.blit(_help_overlay_cache[size], (0, 0))
+
+
+def setup_display(
+    fullscreen: bool, width: int, height: int, rotate: int,
+    bg_color: Color, eye_color: Color,
+    desktop_size: tuple[int, int] | None = None,
+) -> tuple[pygame.Surface, pygame.Surface, RoboEyes]:
+    """Creates the window, draw surface, and RoboEyes instance.
+
+    Args:
+        fullscreen: Whether to use fullscreen mode.
+        width: Base canvas width in pixels.
+        height: Base canvas height in pixels.
+        rotate: Rotation angle in degrees (0, 90, 180, 270).
+        bg_color: Background color as (R, G, B).
+        eye_color: Eye color as (R, G, B).
+        desktop_size: Desktop resolution as (width, height), used for
+            fullscreen. If None, queries pygame.display.Info().
+
+    Returns:
+        A tuple of (window surface, draw surface, RoboEyes instance).
+    """
+    if fullscreen:
+        if desktop_size is None:
+            info = pygame.display.Info()
+            desk_w, desk_h = info.current_w, info.current_h
         else:
-            # Cyclops Tired Eyelids
-            half_width = self.eyeLwidth_current // 2
-            points_left = [
-                (self.eyeLx, self.eyeLy - 1),
-                (self.eyeLx + half_width, self.eyeLy - 1),
-                (self.eyeLx, self.eyeLy + self.eyelids_tired_height - 1)
-            ]
-            pygame.draw.polygon(self.surface, BGCOLOR, points_left)
-
-            points_right = [
-                (self.eyeLx + half_width, self.eyeLy - 1),
-                (self.eyeLx + self.eyeLwidth_current, self.eyeLy - 1),
-                (self.eyeLx + self.eyeLwidth_current, self.eyeLy + self.eyelids_tired_height - 1)
-            ]
-            pygame.draw.polygon(self.surface, BGCOLOR, points_right)
-
-        # Draw Angry Eyelids
-        self.eyelids_angry_height = (self.eyelids_angry_height + self.eyelids_angry_height_next) // 2
-        if not self.cyclops:
-            # Left Eye
-            points_left = [
-                (self.eyeLx, self.eyeLy - 1),
-                (self.eyeLx + self.eyeLwidth_current, self.eyeLy - 1),
-                (self.eyeLx + self.eyeLwidth_current, self.eyeLy + self.eyelids_angry_height - 1)
-            ]
-            pygame.draw.polygon(self.surface, BGCOLOR, points_left)
-
-            # Right Eye
-            points_right = [
-                (self.eyeRx, self.eyeRy - 1),
-                (self.eyeRx + self.eyeRwidth_current, self.eyeRy - 1),
-                (self.eyeRx, self.eyeRy + self.eyelids_angry_height - 1)
-            ]
-            pygame.draw.polygon(self.surface, BGCOLOR, points_right)
+            desk_w, desk_h = desktop_size
+        if rotate in (90, 270):
+            draw_width, draw_height = desk_h, desk_w
         else:
-            # Cyclops Angry Eyelids
-            half_width = self.eyeLwidth_current // 2
-            points_left = [
-                (self.eyeLx, self.eyeLy - 1),
-                (self.eyeLx + half_width, self.eyeLy - 1),
-                (self.eyeLx + half_width, self.eyeLy + self.eyelids_angry_height - 1)
-            ]
-            pygame.draw.polygon(self.surface, BGCOLOR, points_left)
-
-            points_right = [
-                (self.eyeLx + half_width, self.eyeLy - 1),
-                (self.eyeLx + self.eyeLwidth_current, self.eyeLy - 1),
-                (self.eyeLx + half_width, self.eyeLy + self.eyelids_angry_height - 1)
-            ]
-            pygame.draw.polygon(self.surface, BGCOLOR, points_right)
-
-        # Draw Happy Eyelids
-        self.eyelids_happy_bottom_offset = (self.eyelids_happy_bottom_offset + self.eyelids_happy_bottom_offset_next) // 2
-        pygame.draw.rect(self.surface, BGCOLOR,
-                         (self.eyeLx - 2, (self.eyeLy + self.eyeLheight_current) - self.eyelids_happy_bottom_offset + 2,
-                          self.eyeLwidth_current + 4, self.eyeLheight_default))
-        if not self.cyclops:
-            pygame.draw.rect(self.surface, BGCOLOR,
-                             (self.eyeRx - 2, (self.eyeRy + self.eyeRheight_current) - self.eyelids_happy_bottom_offset + 2,
-                              self.eyeRwidth_current + 4, self.eyeRheight_default))
-
-        # Update Display (Handled externally)
-        # pygame.display.flip()  # Removed to handle rotation externally
-
-    def draw_eye(self, x, y, width, height, border_radius, color):
-        # Draw a rounded rectangle representing an eye
-        eye_rect = pygame.Rect(x, y, width, height)
-        if border_radius > 0:
-            pygame.draw.rect(self.surface, color, eye_rect, border_radius=border_radius)
+            draw_width, draw_height = desk_w, desk_h
+        window = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+    else:
+        draw_width, draw_height = width, height
+        if rotate in (90, 270):
+            win_w, win_h = draw_height, draw_width
         else:
-            pygame.draw.rect(self.surface, color, eye_rect)
+            win_w, win_h = draw_width, draw_height
+        window = pygame.display.set_mode((win_w, win_h))
 
-    def clear_display(self):
-        self.surface.fill(BGCOLOR)
-
-# Example usage within a Pygame application
-def main():
-    pygame.init()
-
-    # Screen settings
-    screen_width = 240   # Rotated width
-    screen_height = 320  # Rotated height
-    window = pygame.display.set_mode((screen_width, screen_height))
     pygame.display.set_caption("RoboEyes Simulation")
-
-    # Create a separate surface for drawing (unrotated)
-    draw_width = 320
-    draw_height = 240
     draw_surface = pygame.Surface((draw_width, draw_height))
-    draw_surface.fill(BGCOLOR)  # Ensure it's cleared initially
 
-    # Create RoboEyes instance
-    robo_eyes = RoboEyes(draw_surface, width=draw_width, height=draw_height, frame_rate=50)
+    robo_eyes = RoboEyes(draw_surface, width=draw_width, height=draw_height,
+                         bg_color=bg_color, eye_color=eye_color)
     robo_eyes.begin()
+    return window, draw_surface, robo_eyes
 
-    # Example configurations
-    robo_eyes.setMood(DEFAULT)
-    robo_eyes.setAutoblinker(True, interval=2, variation=3)
-    robo_eyes.setIdleMode(True, interval=5, variation=5)
-    robo_eyes.setCuriosity(True)
-    # robo_eyes.setCyclops(False)
-    # robo_eyes.setHFlicker(True, amplitude=4)
-    # robo_eyes.setVFlicker(True, amplitude=20)
 
-    clock = pygame.time.Clock()
+def main() -> None:
+    """Entry point: parses arguments, starts pygame, and runs the main loop."""
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--rotate", type=int, default=0, choices=[0, 90, 180, 270],
+                        help="Rotation angle in degrees (default: 0)")
+    parser.add_argument("--port", type=int, default=5005,
+                        help="UDP port for remote commands (default: 5005)")
+    parser.add_argument("--bind", default="127.0.0.1",
+                        help="Bind address for UDP (default: 127.0.0.1)")
+    parser.add_argument("--color", type=parse_color, default="0,255,255",
+                        help="Eye color as R,G,B (default: 0,255,255)")
+    parser.add_argument("--bgcolor", type=parse_color, default="0,0,0",
+                        help="Background color as R,G,B (default: 0,0,0)")
+    parser.add_argument("--width", type=int, default=640,
+                        help="Canvas width in pixels (default: 640)")
+    parser.add_argument("--height", type=int, default=480,
+                        help="Canvas height in pixels (default: 480)")
+    parser.add_argument("--fullscreen", action="store_true",
+                        help="Run in fullscreen mode")
+    args = parser.parse_args()
 
-    while True:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.setblocking(False)
+        sock.bind((args.bind, args.port))
+        print(f"Listening for commands on UDP {args.bind}:{args.port}")
 
-            # Example: Change mood with key presses
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_1:
-                    robo_eyes.setMood(TIRED)
-                elif event.key == pygame.K_2:
-                    robo_eyes.setMood(ANGRY)
-                elif event.key == pygame.K_3:
-                    robo_eyes.setMood(HAPPY)
-                elif event.key == pygame.K_0:
-                    robo_eyes.setMood(DEFAULT)
-                elif event.key == pygame.K_c:
-                    robo_eyes.anim_confused()
-                elif event.key == pygame.K_l:
-                    robo_eyes.anim_laugh()
+        pygame.init()
+        try:
+            # Capture desktop resolution before first set_mode call
+            info = pygame.display.Info()
+            desktop_size: tuple[int, int] = (info.current_w, info.current_h)
 
-        # Update RoboEyes
-        robo_eyes.update()
+            is_fullscreen: bool = args.fullscreen
+            window, draw_surface, robo_eyes = setup_display(
+                is_fullscreen, args.width, args.height, args.rotate,
+                args.bgcolor, args.color, desktop_size,
+            )
+            robo_eyes.set_mood(Mood.DEFAULT)
+            robo_eyes.set_autoblinker(True, interval=2, variation=3)
+            robo_eyes.set_idle_mode(True, interval=5, variation=5)
+            robo_eyes.set_curiosity(True)
 
-        # Rotate the draw_surface by 90 degrees clockwise
-        rotated_surface = pygame.transform.rotate(draw_surface, -90)
-        rotated_rect = rotated_surface.get_rect(center=window.get_rect().center)
+            show_help: bool = False
+            clock = pygame.time.Clock()
 
-        # Clear the window before blitting
-        window.fill(BGCOLOR)
+            while True:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        return
+                    if event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_ESCAPE:
+                            return
+                        elif event.key == pygame.K_1:
+                            robo_eyes.set_mood(Mood.TIRED)
+                        elif event.key == pygame.K_2:
+                            robo_eyes.set_mood(Mood.ANGRY)
+                        elif event.key == pygame.K_3:
+                            robo_eyes.set_mood(Mood.HAPPY)
+                        elif event.key == pygame.K_0:
+                            robo_eyes.set_mood(Mood.DEFAULT)
+                        elif event.key == pygame.K_4:
+                            robo_eyes.set_mood(Mood.SQUINT)
+                        elif event.key == pygame.K_c:
+                            robo_eyes.anim_confused()
+                        elif event.key == pygame.K_l:
+                            robo_eyes.anim_laugh()
+                        elif event.key == pygame.K_b:
+                            robo_eyes.blink()
+                        elif event.key == pygame.K_q:
+                            robo_eyes.wink_left()
+                        elif event.key == pygame.K_e:
+                            robo_eyes.wink_right()
+                        elif event.key == pygame.K_LEFT:
+                            robo_eyes.set_position(Position.W)
+                        elif event.key == pygame.K_RIGHT:
+                            robo_eyes.set_position(Position.E)
+                        elif event.key == pygame.K_UP:
+                            robo_eyes.set_position(Position.N)
+                        elif event.key == pygame.K_DOWN:
+                            robo_eyes.set_position(Position.S)
+                        elif event.key == pygame.K_SPACE:
+                            robo_eyes.set_position(Position.CENTER)
+                        elif event.key == pygame.K_f:
+                            is_fullscreen = not is_fullscreen
+                            _help_overlay_cache.clear()
+                            # Preserve current state
+                            old = robo_eyes
+                            # Recreate at new resolution
+                            window, draw_surface, robo_eyes = setup_display(
+                                is_fullscreen, args.width, args.height,
+                                args.rotate, old.bg_color, old.eye_color,
+                                desktop_size,
+                            )
+                            # Restore state
+                            robo_eyes.set_mood(old.current_mood)
+                            robo_eyes.set_autoblinker(
+                                old.autoblinker,
+                                interval=old.blink_interval // 1000,
+                                variation=old.blink_interval_variation // 1000,
+                            )
+                            robo_eyes.set_idle_mode(
+                                old.idle,
+                                interval=old.idle_interval // 1000,
+                                variation=old.idle_interval_variation // 1000,
+                            )
+                            robo_eyes.set_curiosity(old.curious)
+                            robo_eyes.set_cyclops(old.cyclops)
+                        elif event.key == pygame.K_SLASH and (event.mod & pygame.KMOD_SHIFT):
+                            show_help = not show_help
 
-        # Blit the rotated surface onto the main window
-        window.blit(rotated_surface, rotated_rect)
+                # Process UDP commands (bounded per frame)
+                for _ in range(MAX_UDP_MESSAGES_PER_FRAME):
+                    try:
+                        data, _ = sock.recvfrom(1024)
+                        try:
+                            cmd = json.loads(data.decode())
+                            handle_command(cmd, robo_eyes)
+                        except (json.JSONDecodeError, ValueError):
+                            pass
+                    except BlockingIOError:
+                        break
 
-        # Optional Debug Drawings
-        # Uncomment the following lines to add debug shapes
-        # pygame.draw.rect(draw_surface, (255, 0, 0), (10, 10, 50, 50))  # Red square for debugging
-        # pygame.draw.circle(draw_surface, (0, 255, 0), (160, 120), 10)  # Green circle at center
+                robo_eyes.update()
 
-        # Update the display
-        pygame.display.flip()
+                if args.rotate:
+                    rotated = pygame.transform.rotate(draw_surface, -args.rotate)
+                    window.fill(robo_eyes.bg_color)
+                    window.blit(rotated, rotated.get_rect(center=window.get_rect().center))
+                else:
+                    window.blit(draw_surface, (0, 0))
 
-        # Limit to 60 FPS
-        clock.tick(60)
+                if show_help:
+                    draw_help_overlay(window)
+
+                pygame.display.flip()
+                clock.tick(50)
+        finally:
+            pygame.quit()
+    finally:
+        sock.close()
+
 
 if __name__ == "__main__":
     main()

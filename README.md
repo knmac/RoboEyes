@@ -1,4 +1,4 @@
-# RoboEyes Library
+# RoboEyes
 
 RoboEyes is a Python library that creates smoothly animated robot eyes for GUI displays using **Pygame**. It provides configurable eye shapes and various moods and animations, making it ideal for robotics, art installations, and interactive applications.
 
@@ -8,16 +8,70 @@ RoboEyes is a Python library that creates smoothly animated robot eyes for GUI d
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/sofianhw/RoboEyes.git
+   git clone https://github.com/knmac/RoboEyes.git
+   cd RoboEyes
    ```
-2. Install required dependencies:
+2. Install dependencies with [uv](https://docs.astral.sh/uv/):
    ```bash
-   pip install pygame
+   uv sync
    ```
 3. Run:
    ```bash
-   python main.py
+   uv run main.py
    ```
+
+### Options
+
+```
+--rotate {0,90,180,270}   Screen rotation in degrees (default: 0)
+--port PORT               UDP port for remote commands (default: 5005)
+--bind ADDRESS            Bind address for UDP (default: 127.0.0.1)
+--color R,G,B             Eye color (default: 0,255,255)
+--bgcolor R,G,B           Background color (default: 0,0,0)
+--width WIDTH             Canvas width in pixels (default: 640)
+--height HEIGHT           Canvas height in pixels (default: 480)
+--fullscreen              Run in fullscreen mode
+```
+
+---
+
+## Keyboard Controls
+
+| Key | Action |
+|-----|--------|
+| `Esc` | Quit |
+| `0` / `1` / `2` / `3` / `4` | Mood: default / tired / angry / happy / squint |
+| Arrow keys | Look direction (up/down/left/right) |
+| `Space` | Reset look to center |
+| `b` | Blink |
+| `q` / `e` | Wink left / right |
+| `c` | Confused animation |
+| `l` | Laugh animation |
+| `f` | Toggle fullscreen |
+| `?` | Toggle key bindings overlay |
+
+---
+
+## UDP Remote Commands
+
+Send JSON to the configured UDP port to control the eyes remotely.
+
+```bash
+echo '{"mood":"happy","look":"w"}' | nc -u 127.0.0.1 5005
+```
+
+| Command | Example | Description |
+|---------|---------|-------------|
+| `mood` | `{"mood": "happy"}` | Set mood (`default`/`tired`/`angry`/`happy`/`squint`) |
+| `look` | `{"look": "e"}` | Look direction (`n`/`ne`/`e`/`se`/`s`/`sw`/`w`/`nw`/`center`) |
+| `anim` | `{"anim": "laugh"}` | Trigger animation (`confused`/`laugh`/`blink`/`wink_left`/`wink_right`) |
+| `color` | `{"color": [0, 200, 255]}` | Set eye color `[R, G, B]` |
+| `bgcolor` | `{"bgcolor": [20, 20, 40]}` | Set background color `[R, G, B]` |
+| `cyclops` | `{"cyclops": true}` | Toggle single-eye mode |
+| `idle` | `{"idle": true}` | Toggle idle random movement |
+| `autoblink` | `{"autoblink": true}` | Toggle automatic blinking |
+
+Commands can be combined: `{"mood": "angry", "look": "e", "color": [255, 50, 50]}`
 
 ---
 
@@ -25,29 +79,33 @@ RoboEyes is a Python library that creates smoothly animated robot eyes for GUI d
 
 ### General
 
-- **`begin(screen_width, screen_height, max_framerate)`**: Initialize RoboEyes.
-- **`update()`**: Update eye animations with frame rate limiting.
-- **`drawEyes()`**: Draw eyes without frame rate limiting.
+- **`begin()`** — Initialize the display with eyes closed.
+- **`update()`** — Run one frame of the animation loop.
 
-### Configurations
+### Configuration
 
-- **`setWidth(left, right)`**: Set width of eyes.
-- **`setHeight(left, right)`**: Set height of eyes.
-- **`setBorderradius(left, right)`**: Set border radius.
-- **`setSpacebetween(space)`**: Adjust spacing between eyes.
-- **`setCyclops(on_off)`**: Toggle single-eye mode.
+- **`set_width(left_eye, right_eye)`** — Set width of eyes in pixels.
+- **`set_height(left_eye, right_eye)`** — Set height of eyes in pixels.
+- **`set_border_radius(left_eye, right_eye)`** — Set corner radius.
+- **`set_space_between(space)`** — Adjust spacing between eyes.
+- **`set_cyclops(cyclops_bit)`** — Toggle single-eye mode.
+- **`set_curiosity(curious_bit)`** — Toggle curiosity mode (eyes grow taller at screen edges).
 
 ### Expressions and Animations
 
-- **`setMood(mood)`**: Set mood (`HAPPY`, `TIRED`, `ANGRY`, `DEFAULT`).
-- **`anim_confused()`**: Confused animation.
-- **`anim_laugh()`**: Laughing animation.
-- **`blink(left=1, right=1)`**: Blink one or both eyes.
+- **`set_mood(mood)`** — Set mood (`Mood.DEFAULT`, `Mood.TIRED`, `Mood.ANGRY`, `Mood.HAPPY`, `Mood.SQUINT`).
+- **`set_position(position)`** — Set gaze direction using `Position` enum.
+- **`blink(left, right)`** — Blink one or both eyes.
+- **`wink_left()`** / **`wink_right()`** — Wink a single eye.
+- **`anim_confused()`** — Confused (horizontal shake) animation.
+- **`anim_laugh()`** — Laugh (vertical bounce) animation.
 
 ### Macro Animators
 
-- **`setAutoblinker(on_off, interval, variation)`**: Random blinking.
-- **`setIdleMode(on_off, interval, variation)`**: Random repositioning.
+- **`set_autoblinker(active, interval, variation)`** — Automated random blinking.
+- **`set_idle_mode(active, interval, variation)`** — Automated random repositioning.
+- **`set_h_flicker(flicker_bit, amplitude)`** — Horizontal flicker effect.
+- **`set_v_flicker(flicker_bit, amplitude)`** — Vertical flicker effect.
 
 ---
 
@@ -59,4 +117,4 @@ This project is licensed under the **GNU General Public License (GPL)**.
 
 ## Credits
 
-The RoboEyes library is inspired by the [FluxGarage RoboEyes project](https://github.com/FluxGarage/RoboEyes/) by FluxGarage. Special thanks for the original work that inspired this project.
+Forked from [sofianhw/RoboEyes](https://github.com/sofianhw/RoboEyes), which was inspired by the [FluxGarage RoboEyes project](https://github.com/FluxGarage/RoboEyes/). Special thanks for the original work that inspired this project.
