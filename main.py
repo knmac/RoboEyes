@@ -15,7 +15,7 @@ Options:
 
 Keyboard Controls:
     Esc         Quit
-    0/1/2/3/4   Mood: default / tired / angry / happy / squint
+    0/1/2/3/4   Shape: default / tired / angry / smile / squint
     Arrow keys  Look direction (up/down/left/right)
     Space       Reset look to center
     b           Blink
@@ -29,7 +29,7 @@ Keyboard Controls:
 UDP Remote Commands (JSON):
     Send JSON to the configured UDP port to control the eyes remotely.
 
-    {"mood": "happy"}                   Set mood (default/tired/angry/happy/squint)
+    {"shape": "smile"}                   Set shape (default/tired/angry/smile/squint)
     {"look": "e"}                       Look direction (n/ne/e/se/s/sw/w/nw/center)
     {"anim": "laugh"}                   Trigger animation (confused/laugh/blink/wink_left/wink_right)
     {"color": [0, 200, 255]}            Set eye color [R, G, B]
@@ -38,10 +38,10 @@ UDP Remote Commands (JSON):
     {"idle": true}                      Toggle idle random movement
     {"autoblink": true}                 Toggle automatic blinking
 
-    Commands can be combined: {"mood": "angry", "look": "e", "color": [255, 50, 50]}
+    Commands can be combined: {"shape": "angry", "look": "e", "color": [255, 50, 50]}
 
     Example:
-        echo '{"mood":"happy","look":"w"}' | nc -u 127.0.0.1 5005
+        echo '{"shape":"smile","look":"w"}' | nc -u 127.0.0.1 5005
 """
 
 from __future__ import annotations
@@ -69,11 +69,11 @@ KEY_BINDINGS_LINES: list[str] = [
     "Key Bindings",
     "",
     "Esc         Quit",
-    "0           Mood: default",
-    "1           Mood: tired",
-    "2           Mood: angry",
-    "3           Mood: happy",
-    "4           Mood: squint",
+    "0           Shape: default",
+    "1           Shape: tired",
+    "2           Shape: angry",
+    "3           Shape: smile",
+    "4           Shape: squint",
     "Arrows      Look direction",
     "Space       Center look",
     "b           Blink",
@@ -86,13 +86,13 @@ KEY_BINDINGS_LINES: list[str] = [
 ]
 
 
-class Mood(IntEnum):
-    """Eye mood expressions."""
+class Shape(IntEnum):
+    """Eye shape expressions."""
 
     DEFAULT = 0
     TIRED = 1
     ANGRY = 2
-    HAPPY = 3
+    SMILE = 3
     SQUINT = 4
 
 
@@ -110,7 +110,7 @@ class Position(IntEnum):
     NW = 8
 
 
-MOOD_MAP: dict[str, Mood] = {m.name.lower(): m for m in Mood}
+SHAPE_MAP: dict[str, Shape] = {s.name.lower(): s for s in Shape}
 POSITION_MAP: dict[str, Position] = {p.name.lower(): p for p in Position}
 
 POSITION_FACTORS: dict[Position, tuple[float, float]] = {
@@ -170,7 +170,7 @@ class EyeState:
 
 
 class RoboEyes:
-    """Animated robot eyes display with mood, position, and animation support."""
+    """Animated robot eyes display with shape, position, and animation support."""
 
     def __init__(
         self,
@@ -195,8 +195,8 @@ class RoboEyes:
         self.bg_color: Color = bg_color
         self.eye_color: Color = eye_color
 
-        # Mood flags
-        self.current_mood: Mood = Mood.DEFAULT
+        # Shape flags
+        self.current_shape: Shape = Shape.DEFAULT
         self.tired: bool = False
         self.angry: bool = False
         self.happy: bool = False
@@ -348,17 +348,17 @@ class RoboEyes:
         self.space_between_next = space
         self.space_between_default = space
 
-    def set_mood(self, mood: Mood) -> None:
-        """Sets the current mood expression.
+    def set_shape(self, shape: Shape) -> None:
+        """Sets current shape expression.
 
         Args:
-            mood: The mood to display.
+            shape: The shape to display.
         """
-        self.current_mood = mood
-        self.tired = mood == Mood.TIRED
-        self.angry = mood == Mood.ANGRY
-        self.happy = mood == Mood.HAPPY
-        self.squint = mood == Mood.SQUINT
+        self.current_shape = shape
+        self.tired = shape == Shape.TIRED
+        self.angry = shape == Shape.ANGRY
+        self.happy = shape == Shape.SMILE
+        self.squint = shape == Shape.SQUINT
 
     def set_position(self, position: Position) -> None:
         """Sets the gaze direction using a compass position.
@@ -674,7 +674,7 @@ class RoboEyes:
             else:
                 self._draw_eye(self.right)
 
-        # Mood eyelid overlays (skip when squint is active)
+        # Shape eyelid overlays (skip when squint is active)
         if not left_use_squint and not right_use_squint:
             self._draw_eyelids()
 
@@ -725,7 +725,7 @@ class RoboEyes:
             self.surface.blit(rotated, rect)
 
     def _draw_eyelids(self) -> None:
-        """Draws mood-based eyelid overlays (tired, angry, happy)."""
+        """Draws shape-based eyelid overlays (tired, angry, smile)."""
         if self.tired:
             self.eyelids_tired_height_next = self.left.height_current // 2
             self.eyelids_angry_height_next = 0
@@ -915,10 +915,10 @@ def handle_command(cmd: Any, robo_eyes: RoboEyes) -> None:
     if not isinstance(cmd, dict):
         return
 
-    if "mood" in cmd and isinstance(cmd["mood"], str):
-        mood = MOOD_MAP.get(cmd["mood"].lower())
-        if mood is not None:
-            robo_eyes.set_mood(mood)
+    if "shape" in cmd and isinstance(cmd["shape"], str):
+        shape = SHAPE_MAP.get(cmd["shape"].lower())
+        if shape is not None:
+            robo_eyes.set_shape(shape)
 
     if "look" in cmd and isinstance(cmd["look"], str):
         pos = POSITION_MAP.get(cmd["look"].lower())
@@ -1099,7 +1099,7 @@ def main() -> None:
                 is_fullscreen, args.width, args.height, args.rotate,
                 args.bgcolor, args.color, desktop_size,
             )
-            robo_eyes.set_mood(Mood.DEFAULT)
+            robo_eyes.set_shape(Shape.DEFAULT)
             robo_eyes.set_autoblinker(True, interval=2, variation=3)
             robo_eyes.set_idle_mode(True, interval=5, variation=5)
             robo_eyes.set_curiosity(True)
@@ -1115,15 +1115,15 @@ def main() -> None:
                         if event.key == pygame.K_ESCAPE:
                             return
                         elif event.key == pygame.K_1:
-                            robo_eyes.set_mood(Mood.TIRED)
+                            robo_eyes.set_shape(Shape.TIRED)
                         elif event.key == pygame.K_2:
-                            robo_eyes.set_mood(Mood.ANGRY)
+                            robo_eyes.set_shape(Shape.ANGRY)
                         elif event.key == pygame.K_3:
-                            robo_eyes.set_mood(Mood.HAPPY)
+                            robo_eyes.set_shape(Shape.SMILE)
                         elif event.key == pygame.K_0:
-                            robo_eyes.set_mood(Mood.DEFAULT)
+                            robo_eyes.set_shape(Shape.DEFAULT)
                         elif event.key == pygame.K_4:
-                            robo_eyes.set_mood(Mood.SQUINT)
+                            robo_eyes.set_shape(Shape.SQUINT)
                         elif event.key == pygame.K_c:
                             robo_eyes.anim_confused()
                         elif event.key == pygame.K_l:
@@ -1156,7 +1156,7 @@ def main() -> None:
                                 desktop_size,
                             )
                             # Restore state
-                            robo_eyes.set_mood(old.current_mood)
+                            robo_eyes.set_shape(old.current_shape)
                             robo_eyes.set_autoblinker(
                                 old.autoblinker,
                                 interval=old.blink_interval // 1000,
