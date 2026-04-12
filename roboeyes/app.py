@@ -111,15 +111,15 @@ def main() -> None:
                         elif event.key == pygame.K_0:
                             robo_eyes.set_shape(Shape.DEFAULT)
                         elif event.key == pygame.K_1:
-                            robo_eyes.set_shape(Shape.TIRED)
+                            robo_eyes.set_shape(Shape.DROOPY)
                         elif event.key == pygame.K_2:
-                            robo_eyes.set_shape(Shape.ANGRY)
+                            robo_eyes.set_shape(Shape.FROWN)
                         elif event.key == pygame.K_3:
-                            robo_eyes.set_shape(Shape.SMILE)
+                            robo_eyes.set_shape(Shape.CHEERFUL)
                         elif event.key == pygame.K_4:
                             robo_eyes.set_shape(Shape.SQUINT)
                         elif event.key == pygame.K_5:
-                            robo_eyes.set_shape(Shape.SLEEP)
+                            robo_eyes.set_shape(Shape.CLOSED)
                         elif event.key == pygame.K_c:
                             robo_eyes.anim_confused()
                         elif event.key == pygame.K_l:

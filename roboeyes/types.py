@@ -17,11 +17,14 @@ class Shape(IntEnum):
     """Eye shape expressions."""
 
     DEFAULT = 0
-    TIRED = 1
-    ANGRY = 2
-    SMILE = 3
+    DROOPY = 1
+    FROWN = 2
+    CHEERFUL = 3
     SQUINT = 4
-    SLEEP = 5
+    CLOSED = 5
+    # TODO: Add special FX-based shapes for anime chibi style:
+    # HEART = 6  # Heart eyes for love/affection (😘, ❤️, 🥰, 🤗)
+    # STAR = 7   # Star eyes for excited/happy (👍, 👌, 🤩, 🥳, 🌹, ✌️)
 
 
 class Position(IntEnum):
@@ -36,9 +39,29 @@ class Position(IntEnum):
     SW = 6
     W = 7
     NW = 8
+    # TODO: Add special FX-based animations for anime chibi style:
+    # bounce = 9   # Cheerful bounce (👍, ❤️, 🤩, 🥰)
+    # sway = 10      # Affectionate sway (😘, ❤️, 🤗)
+    # sparkle = 11 # Star twinkle (👌, 🥳, 🌹)
+    # wave = 12     # Greeting wave (👋)
+    # peace = 13    # Victory peace sign (✌️)
+    # glow = 14     # Angelic halo ring (🌹)
+    # tears = 15     # Tear drops (😭)
+    # dizzy = 16     # Poop confused spin (💩)
+    # TODO: Add temporary color override for animations (temp_color in RoboEyes)
+    # Implement set_temp_color(color) and clear_temp_color() methods
+    # Modify renderer to check for temp_color before drawing
+    # Update anim_* methods to set/clear temp color as needed
 
 
-SHAPE_MAP: dict[str, Shape] = {s.name.lower(): s for s in Shape}
+SHAPE_MAP: dict[str, Shape] = {
+    "default": Shape.DEFAULT,
+    "tired": Shape.DROOPY,
+    "frown": Shape.FROWN,
+    "cheerful": Shape.CHEERFUL,
+    "squint": Shape.SQUINT,
+    "closed": Shape.CLOSED,
+}
 POSITION_MAP: dict[str, Position] = {p.name.lower(): p for p in Position}
 
 POSITION_FACTORS: dict[Position, tuple[float, float]] = {
