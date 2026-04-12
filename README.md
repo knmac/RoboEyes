@@ -40,13 +40,14 @@ RoboEyes is a Python library that creates smoothly animated robot eyes for GUI d
 | Key | Action |
 |-----|--------|
 | `Esc` | Quit |
-| `0` / `1` / `2` / `3` / `4` | Mood: default / tired / angry / happy / squint |
+| `0` / `1` / `2` / `3` / `4` / `5` | Shape: default / tired / angry / smile / squint / sleep |
 | Arrow keys | Look direction (up/down/left/right) |
 | `Space` | Reset look to center |
 | `b` | Blink |
 | `q` / `e` | Wink left / right |
 | `c` | Confused animation |
 | `l` | Laugh animation |
+| `s` | Toggle breathing animation |
 | `f` | Toggle fullscreen |
 | `?` | Toggle key bindings overlay |
 
@@ -57,21 +58,21 @@ RoboEyes is a Python library that creates smoothly animated robot eyes for GUI d
 Send JSON to the configured UDP port to control the eyes remotely.
 
 ```bash
-echo '{"mood":"happy","look":"w"}' | nc -u 127.0.0.1 5005
+echo '{"shape":"smile","look":"w"}' | nc -u 127.0.0.1 5005
 ```
 
 | Command | Example | Description |
 |---------|---------|-------------|
-| `mood` | `{"mood": "happy"}` | Set mood (`default`/`tired`/`angry`/`happy`/`squint`) |
+| `shape` | `{"shape": "smile"}` | Set shape (`default`/`tired`/`angry`/`smile`/`squint`/`sleep`) |
 | `look` | `{"look": "e"}` | Look direction (`n`/`ne`/`e`/`se`/`s`/`sw`/`w`/`nw`/`center`) |
-| `anim` | `{"anim": "laugh"}` | Trigger animation (`confused`/`laugh`/`blink`/`wink_left`/`wink_right`) |
+| `anim` | `{"anim": "laugh"}` | Trigger animation (`confused`/`laugh`/`sleep`/`breathing`/`blink`/`wink_left`/`wink_right`) |
 | `color` | `{"color": [0, 200, 255]}` | Set eye color `[R, G, B]` |
 | `bgcolor` | `{"bgcolor": [20, 20, 40]}` | Set background color `[R, G, B]` |
 | `cyclops` | `{"cyclops": true}` | Toggle single-eye mode |
 | `idle` | `{"idle": true}` | Toggle idle random movement |
 | `autoblink` | `{"autoblink": true}` | Toggle automatic blinking |
 
-Commands can be combined: `{"mood": "angry", "look": "e", "color": [255, 50, 50]}`
+Commands can be combined: `{"shape": "angry", "look": "e", "color": [255, 50, 50]}`
 
 ---
 
@@ -93,12 +94,16 @@ Commands can be combined: `{"mood": "angry", "look": "e", "color": [255, 50, 50]
 
 ### Expressions and Animations
 
-- **`set_mood(mood)`** — Set mood (`Mood.DEFAULT`, `Mood.TIRED`, `Mood.ANGRY`, `Mood.HAPPY`, `Mood.SQUINT`).
+- **`set_shape(shape)`** — Set shape (`Shape.DEFAULT`, `Shape.TIRED`, `Shape.ANGRY`, `Shape.SMILE`, `Shape.SQUINT`, `Shape.SLEEP`).
 - **`set_position(position)`** — Set gaze direction using `Position` enum.
+- **`close(left, right)`** — Close one or both eyes.
+- **`open_eyes(left, right)`** — Mark eyes to re-open after closing.
 - **`blink(left, right)`** — Blink one or both eyes.
 - **`wink_left()`** / **`wink_right()`** — Wink a single eye.
 - **`anim_confused()`** — Confused (horizontal shake) animation.
 - **`anim_laugh()`** — Laugh (vertical bounce) animation.
+- **`anim_sleep()`** — Enter sleep mode: sets sleep shape, centers eyes, and starts breathing animation. Blinking is automatically suppressed during sleep.
+- **`anim_breathing()`** — Toggle breathing animation (works with any shape).
 
 ### Macro Animators
 
