@@ -120,3 +120,43 @@ class Renderer:
         mask_rect = pygame.Rect(eye.x - 2, mask_y, eye.width_current + 4, mask_h)
         pygame.draw.rect(self.surface, self.bg_color, mask_rect,
                          border_radius=eye.border_radius_current)
+
+    def draw_blush(self, eye: EyeState, scale: float, side: str = "left") -> None:
+        """Draws a blush oval on the outer-lower side of an eye."""
+        r = int(18 * scale)
+        cy = eye.y + eye.height_current // 2 + int(10 * scale)
+        if side == "left":
+            cx = eye.x + int(4 * scale)
+        else:
+            cx = eye.x + eye.width_current - int(4 * scale)
+        blush_surf = pygame.Surface((r * 2, r), pygame.SRCALPHA)
+        pygame.draw.ellipse(blush_surf, (*self.eye_color, 120), (0, 0, r * 2, r))
+        self.surface.blit(blush_surf, (cx - r, cy))
+
+    def draw_bubbles(self, eye: EyeState, scale: float, time_ms: int) -> None:
+        """Draws animated rising bubbles from the side of an eye."""
+        base_x = eye.x + eye.width_current + int(8 * scale)
+        base_y = eye.y + eye.height_current // 2
+        for i in range(3):
+            phase = (time_ms / 1000.0) + i * 1.2
+            travel = int(40 * scale)
+            y_off = int((phase % 3.0) / 3.0 * travel)
+            x_off = int(math.sin(phase * 2) * 5 * scale)
+            radius = int((6 + i * 2) * scale)
+            alpha = max(0, 180 - int(y_off * 180 / travel))
+            bubble = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+            pygame.draw.circle(bubble, (*self.eye_color, alpha), (radius, radius), radius, max(2, radius // 4))
+            self.surface.blit(bubble, (base_x + x_off - radius, base_y - y_off - radius))
+
+    def draw_stress_lines(self, eye: EyeState, scale: float) -> None:
+        """Draws anime-style vertical stress lines above an eye."""
+        line_w = max(2, int(2 * scale))
+        gap = int(10 * scale)
+        base_x = eye.x + eye.width_current + int(4 * scale)
+        top_y = eye.y - int(16 * scale)
+        lengths = [45, 35, 50, 30, 42, 28, 48, 32]
+        for i, l in enumerate(lengths):
+            x = base_x - i * gap
+            h = int(l * scale)
+            pygame.draw.line(self.surface, self.eye_color,
+                             (x, top_y), (x, top_y + h), line_w)

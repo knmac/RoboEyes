@@ -71,8 +71,9 @@ echo '{"shape":"smile","look":"w"}' | nc -u 127.0.0.1 5005
 | `cyclops` | `{"cyclops": true}` | Toggle single-eye mode |
 | `idle` | `{"idle": true}` | Toggle idle random movement |
 | `autoblink` | `{"autoblink": true}` | Toggle automatic blinking |
+| `overlay` | `{"overlay": "blush"}` | Set visual overlay (`blush`/`bubbles`/`stress`/`null` to clear) |
 
-Commands can be combined: `{"shape": "angry", "look": "e", "color": [255, 50, 50]}`
+Commands can be combined: `{"shape": "angry", "look": "e", "color": [255, 50, 50], "overlay": "stress"}`
 
 ---
 
@@ -104,6 +105,11 @@ Commands can be combined: `{"shape": "angry", "look": "e", "color": [255, 50, 50
 - **`anim_bounce()`** — Vertical bounce animation.
 - **`anim_sleep()`** — Enter sleep mode: sets sleep shape, centers eyes, and starts breathing animation. Blinking is automatically suppressed during sleep.
 - **`anim_breathing()`** — Toggle breathing animation (works with any shape).
+
+### Overlays
+
+- **`set_overlay(name)`** — Enable a visual overlay (`"blush"`, `"bubbles"`, `"stress"`).
+- **`clear_overlay(name)`** — Disable an overlay, or all if `name` is `None`.
 
 ### Macro Animators
 

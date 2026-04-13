@@ -18,32 +18,32 @@ PORT=5005
 COLOR=""
 DURATION=""
 
-# ── Emotion table: shape|anim|sound|duration|color_name ──
+# ── Emotion table: shape|anim|sound|duration|color_name|overlay ──
 #
-#   Emotion      Shape     Anim       Sound            Dur  Color Name
-#   ---------    -------   ---------  --------------   ---  ----------
-#   neutral      default   blink      (none)             0  sky
-#   happy        smile     blink      happy_sound        4  green
-#   tired        tired     blink      tired_sound        4  overlay1
-#   angry        angry     shake      angry_sound        4  red
-#   squint       squint    blink      squint_sound       4  peach
-#   sleeping     sleep     breathing  (none)             0  lavender
-#   laughing     smile     bounce     happy_sound        4  pink
-#   surprised    default   shake      surprised_sound    4  yellow
-#   witty        smile     wink_left  (none)             3  teal
+#   Emotion      Shape     Anim       Sound            Dur  Color     Overlay
+#   ---------    -------   ---------  --------------   ---  --------  --------
+#   neutral      default   blink      (none)             0  sky       (none)
+#   happy        smile     blink      happy_sound        4  pink      blush
+#   tired        tired     blink      tired_sound        4  overlay1  stress
+#   angry        angry     shake      angry_sound        4  red       (none)
+#   squint       squint    blink      squint_sound       4  peach     (none)
+#   sleeping     sleep     breathing  (none)             0  lavender  bubbles
+#   laughing     smile     bounce     happy_sound        4  green     (none)
+#   surprised    default   shake      surprised_sound    4  yellow    (none)
+#   witty        smile     wink_left  (none)             3  teal      (none)
 #
 get_emotion() {
     case "$1" in
-        #              shape    anim       sound            dur  color_name
-        neutral)   echo "default|blink||0|sky"                    ;;
-        happy)     echo "smile|blink|happy_sound|4|green"         ;;
-        tired)     echo "tired|blink|tired_sound|4|overlay1"      ;;
-        angry)     echo "angry|shake|angry_sound|4|red"           ;;
-        squint)    echo "squint|blink|squint_sound|4|peach"       ;;
-        sleeping)  echo "sleep|breathing||0|lavender"             ;;
-        laughing)  echo "smile|bounce|happy_sound|4|pink"         ;;
-        surprised) echo "default|shake|surprised_sound|4|yellow"  ;;
-        witty)     echo "smile|wink_left||3|teal"                 ;;
+        #              shape    anim       sound            dur  color     overlay
+        neutral)   echo "default|blink||0|sky|"                    ;;
+        happy)     echo "smile|blink|happy_sound|4|pink|blush"       ;;
+        tired)     echo "tired|blink|tired_sound|4|overlay1|stress"   ;;
+        angry)     echo "angry|shake|angry_sound|4|red|"           ;;
+        squint)    echo "squint|blink|squint_sound|4|peach|"       ;;
+        sleeping)  echo "sleep|breathing||0|lavender|bubbles"      ;;
+        laughing)  echo "smile|bounce|happy_sound|4|green|"        ;;
+        surprised) echo "default|shake|surprised_sound|4|yellow|"  ;;
+        witty)     echo "smile|wink_left||3|teal|"                 ;;
         *) return 1;;
     esac
 }
@@ -97,7 +97,7 @@ done
 # ── Look up emotion ──
 EMO=$(get_emotion "$EMOTION") || { echo "Unknown emotion: $EMOTION"; usage; }
 
-IFS='|' read -r SHAPE ANIM SOUND DUR COLOR_NAME <<< "$EMO"
+IFS='|' read -r SHAPE ANIM SOUND DUR COLOR_NAME OVERLAY <<< "$EMO"
 
 # Resolve color from scheme
 EMO_COLOR="$(lookup_color "$COLOR_NAME")"
@@ -117,6 +117,11 @@ elif [ -n "$EMO_COLOR" ]; then
     CMD="$CMD,\"color\":[$R,$G,$B]"
     HAS_COLOR=true
 fi
+if [ -n "$OVERLAY" ]; then
+    CMD="$CMD,\"overlay\":\"$OVERLAY\""
+else
+    CMD="$CMD,\"overlay\":null"
+fi
 CMD="$CMD}"
 
 # Play sound and send command
@@ -127,7 +132,7 @@ send_udp "$CMD"
 if [ "$DUR" != "0" ] && [ -n "$DUR" ]; then
     (
         sleep "$DUR"
-        RESET="{\"shape\":\"default\",\"anim\":\"blink\""
+        RESET="{\"shape\":\"default\",\"anim\":\"blink\",\"overlay\":null"
         if [ "$HAS_COLOR" = true ]; then
             DEF="$(lookup_color sky)"
             DEF="${DEF:-0,255,255}"

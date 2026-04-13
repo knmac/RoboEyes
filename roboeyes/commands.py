@@ -78,3 +78,15 @@ def handle_command(cmd: Any, robo_eyes: RoboEyes) -> None:
         robo_eyes.set_idle_mode(cmd["idle"])
     if "autoblink" in cmd and isinstance(cmd["autoblink"], bool):
         robo_eyes.set_autoblinker(cmd["autoblink"])
+
+    if "overlay" in cmd:
+        val = cmd["overlay"]
+        if isinstance(val, str):
+            robo_eyes.set_overlay(val)
+        elif isinstance(val, list):
+            robo_eyes.clear_overlay()
+            for f in val:
+                if isinstance(f, str):
+                    robo_eyes.set_overlay(f)
+        elif val is None:
+            robo_eyes.clear_overlay()

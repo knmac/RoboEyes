@@ -10,7 +10,7 @@ import pygame
 
 from roboeyes.commands import handle_command, parse_color
 from roboeyes.eyes import RoboEyes
-from roboeyes.overlay import clear_cache, draw_help_overlay
+from roboeyes.help_menu import clear_cache, draw_help_overlay
 from roboeyes.types import (
     Color,
     MAX_UDP_MESSAGES_PER_FRAME,

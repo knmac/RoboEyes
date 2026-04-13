@@ -137,6 +137,9 @@ class RoboEyes:
         # Breathing (sleep) animation
         self.breathing = False
 
+        # Active overlays
+        self._overlays: set[str] = set()
+
     # -- Public API --
 
     def begin(self) -> None:
@@ -243,6 +246,17 @@ class RoboEyes:
         """Toggles the breathing animation (works with any shape)."""
         self.breathing = not self.breathing
 
+    def set_overlay(self, name: str) -> None:
+        """Enable an overlay (e.g. 'blush', 'bubbles')."""
+        self._overlays.add(name)
+
+    def clear_overlay(self, name: str | None = None) -> None:
+        """Disable an overlay, or all if name is None."""
+        if name is None:
+            self._overlays.clear()
+        else:
+            self._overlays.discard(name)
+
     def clear_display(self) -> None:
         self.surface.fill(self.bg_color)
 
@@ -345,8 +359,8 @@ class RoboEyes:
             self.left.y_next = self.left.y_default + offset
             self.right.y_next = self.right.y_default + offset
 
-        # Idle animation
-        if self.idle and current_time >= self.idle_animation_timer:
+        # Idle animation (skip during sleep)
+        if self.idle and not self.sleep and current_time >= self.idle_animation_timer:
             self.left.x_next = random.randint(0, self._screen_constraint_x())
             self.left.y_next = random.randint(0, self._screen_constraint_y())
             self.idle_animation_timer = current_time + self.idle_interval + random.randint(0, self.idle_interval_variation)
@@ -403,6 +417,18 @@ class RoboEyes:
         # Eyelid overlays (skip when squint is active)
         if not left_use_squint and not right_use_squint:
             self._draw_eyelids()
+
+        # Overlays
+        if "blush" in self._overlays:
+            r.draw_blush(self.left, self.scale, side="left")
+            if not self.cyclops:
+                r.draw_blush(self.right, self.scale, side="right")
+        if "bubbles" in self._overlays:
+            r.draw_bubbles(self.right if not self.cyclops else self.left,
+                           self.scale, current_time)
+        if "stress" in self._overlays:
+            r.draw_stress_lines(self.right if not self.cyclops else self.left,
+                                self.scale)
 
     def _draw_eyelids(self) -> None:
         r = self._renderer
