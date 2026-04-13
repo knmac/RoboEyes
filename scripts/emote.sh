@@ -6,6 +6,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROBO_DIR="$SCRIPT_DIR/.."
 SOUNDS_DIR="$ROBO_DIR/sounds"
+# COLORSCHEME="$SCRIPT_DIR/colorschemes/tokyonight.conf"
+# COLORSCHEME="$SCRIPT_DIR/colorschemes/catppuccin.conf"
 COLORSCHEME="$SCRIPT_DIR/colorschemes/default.conf"
 
 # ── Load color scheme ──
@@ -30,7 +32,7 @@ DURATION=""
 #   sleeping     sleep     breathing  (none)             0  lavender  bubbles
 #   laughing     smile     bounce     happy_sound        4  green     (none)
 #   surprised    default   shake      surprised_sound    4  yellow    (none)
-#   witty        smile     wink_left  (none)             3  teal      (none)
+#   witty        smile     wink_left  (none)             3  teal      sparkle
 #
 get_emotion() {
     case "$1" in
@@ -43,7 +45,7 @@ get_emotion() {
         sleeping)  echo "sleep|breathing||0|lavender|bubbles"      ;;
         laughing)  echo "smile|bounce|happy_sound|4|green|"        ;;
         surprised) echo "default|shake|surprised_sound|4|yellow|"  ;;
-        witty)     echo "smile|wink_left||3|teal|"                 ;;
+        witty)     echo "smile|wink_left||3|teal|sparkle"             ;;
         *) return 1;;
     esac
 }

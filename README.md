@@ -77,6 +77,32 @@ Commands can be combined: `{"shape": "angry", "look": "e", "color": [255, 50, 50
 
 ---
 
+## Emote Script
+
+A convenience script that bundles shape, animation, overlay, color, and sound into named emotions.
+
+```bash
+./scripts/emote.sh <emotion> [OPTIONS]
+```
+
+| Emotion | Shape | Animation | Overlay | Color |
+|---------|-------|-----------|---------|-------|
+| `neutral` | default | blink | — | sky |
+| `happy` | smile | blink | blush | pink |
+| `tired` | tired | blink | stress | overlay1 |
+| `angry` | angry | shake | — | red |
+| `squint` | squint | blink | — | peach |
+| `sleeping` | sleep | breathing | bubbles | lavender |
+| `laughing` | smile | bounce | — | green |
+| `surprised` | default | shake | — | yellow |
+| `witty` | smile | wink_left | — | teal |
+
+Options: `--color R,G,B`, `--duration SECS`, `--port PORT`, `--bind ADDR`
+
+Colors are loaded from a scheme file in `scripts/colorschemes/`. Available schemes: `default`, `catppuccin`, `tokyonight`.
+
+---
+
 ## API Reference
 
 ### General

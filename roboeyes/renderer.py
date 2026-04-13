@@ -160,3 +160,34 @@ class Renderer:
             h = int(l * scale)
             pygame.draw.line(self.surface, self.eye_color,
                              (x, top_y), (x, top_y + h), line_w)
+
+    def _draw_star(self, cx: int, cy: int, r: int, alpha: int) -> None:
+        """Draw a single four-pointed star at (cx, cy)."""
+        r2 = r // 3
+        points = [
+            (cx, cy - r), (cx - r2, cy - r2), (cx - r, cy), (cx - r2, cy + r2),
+            (cx, cy + r), (cx + r2, cy + r2), (cx + r, cy), (cx + r2, cy - r2),
+        ]
+        star_surf = pygame.Surface((r * 2 + 2, r * 2 + 2), pygame.SRCALPHA)
+        local_pts = [(x - cx + r + 1, y - cy + r + 1) for x, y in points]
+        pygame.draw.polygon(star_surf, (*self.eye_color, alpha), local_pts)
+        self.surface.blit(star_surf, (cx - r - 1, cy - r - 1))
+
+    def draw_sparkle(self, eye: EyeState, scale: float, time_ms: int) -> None:
+        """Draws a sparkle (✨) flying up from the side of an eye."""
+        phase = (time_ms / 1000.0) % 2.5
+        travel = int(60 * scale)
+        y_off = int(phase / 2.5 * travel)
+        x_off = int(math.sin(phase * 2.5) * 8 * scale)
+        alpha = max(0, 220 - int(y_off * 220 / travel))
+        base_x = eye.x + eye.width_current + int(16 * scale)
+        base_y = eye.y + eye.height_current // 3
+        cx = base_x + abs(x_off)
+        cy = base_y - y_off
+        # Main star
+        r = int(16 * scale)
+        self._draw_star(cx, cy, r, alpha)
+        # Two smaller companion stars
+        sr = int(6 * scale)
+        self._draw_star(cx + int(14 * scale), cy - int(10 * scale), sr, alpha * 3 // 4)
+        self._draw_star(cx + int(22 * scale), cy + int(4 * scale), sr, alpha // 2)

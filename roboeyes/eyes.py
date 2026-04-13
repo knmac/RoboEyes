@@ -429,6 +429,9 @@ class RoboEyes:
         if "stress" in self._overlays:
             r.draw_stress_lines(self.right if not self.cyclops else self.left,
                                 self.scale)
+        if "sparkle" in self._overlays:
+            r.draw_sparkle(self.right if not self.cyclops else self.left,
+                           self.scale, current_time)
 
     def _draw_eyelids(self) -> None:
         r = self._renderer
