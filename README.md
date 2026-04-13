@@ -43,11 +43,11 @@ RoboEyes is a Python library that creates smoothly animated robot eyes for GUI d
 | `0` / `1` / `2` / `3` / `4` / `5` | Shape: default / tired / angry / smile / squint / sleep |
 | Arrow keys | Look direction (up/down/left/right) |
 | `Space` | Reset look to center |
-| `b` | Blink |
 | `q` / `e` | Wink left / right |
-| `c` | Confused animation |
-| `l` | Laugh animation |
-| `s` | Toggle breathing animation |
+| `w` | Blink |
+| `r` | Shake animation |
+| `t` | Bounce animation |
+| `y` | Toggle breathing animation |
 | `f` | Toggle fullscreen |
 | `?` | Toggle key bindings overlay |
 
@@ -65,7 +65,7 @@ echo '{"shape":"smile","look":"w"}' | nc -u 127.0.0.1 5005
 |---------|---------|-------------|
 | `shape` | `{"shape": "smile"}` | Set shape (`default`/`tired`/`angry`/`smile`/`squint`/`sleep`) |
 | `look` | `{"look": "e"}` | Look direction (`n`/`ne`/`e`/`se`/`s`/`sw`/`w`/`nw`/`center`) |
-| `anim` | `{"anim": "laugh"}` | Trigger animation (`confused`/`laugh`/`sleep`/`breathing`/`blink`/`wink_left`/`wink_right`) |
+| `anim` | `{"anim": "bounce"}` | Trigger animation (`shake`/`bounce`/`sleep`/`breathing`/`blink`/`wink_left`/`wink_right`) |
 | `color` | `{"color": [0, 200, 255]}` | Set eye color `[R, G, B]` |
 | `bgcolor` | `{"bgcolor": [20, 20, 40]}` | Set background color `[R, G, B]` |
 | `cyclops` | `{"cyclops": true}` | Toggle single-eye mode |
@@ -100,8 +100,8 @@ Commands can be combined: `{"shape": "angry", "look": "e", "color": [255, 50, 50
 - **`open_eyes(left, right)`** — Mark eyes to re-open after closing.
 - **`blink(left, right)`** — Blink one or both eyes.
 - **`wink_left()`** / **`wink_right()`** — Wink a single eye.
-- **`anim_confused()`** — Confused (horizontal shake) animation.
-- **`anim_laugh()`** — Laugh (vertical bounce) animation.
+- **`anim_shake()`** — Horizontal shake animation.
+- **`anim_bounce()`** — Vertical bounce animation.
 - **`anim_sleep()`** — Enter sleep mode: sets sleep shape, centers eyes, and starts breathing animation. Blinking is automatically suppressed during sleep.
 - **`anim_breathing()`** — Toggle breathing animation (works with any shape).
 

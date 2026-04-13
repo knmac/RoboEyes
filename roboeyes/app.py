@@ -28,28 +28,43 @@ def setup_display(
     if fullscreen:
         if desktop_size is None:
             info = pygame.display.Info()
-            desktop_size = (info.current_w, info.current_h)
-        window = pygame.display.set_mode(desktop_size, pygame.FULLSCREEN)
-        draw_surface = pygame.Surface((desktop_size[0], desktop_size[1]))
+            desk_w, desk_h = info.current_w, info.current_h
+        else:
+            desk_w, desk_h = desktop_size
+        if rotate in (90, 270):
+            draw_width, draw_height = desk_h, desk_w
+        else:
+            draw_width, draw_height = desk_w, desk_h
+        window = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
     else:
-        window = pygame.display.set_mode((width, height))
-        draw_surface = pygame.Surface((width, height))
+        draw_width, draw_height = width, height
+        if rotate in (90, 270):
+            win_w, win_h = draw_height, draw_width
+        else:
+            win_w, win_h = draw_width, draw_height
+        window = pygame.display.set_mode((win_w, win_h))
 
-    robo_eyes = RoboEyes(draw_surface, width, height, bg_color, eye_color)
+    pygame.display.set_caption("RoboEyes Simulation")
+    draw_surface = pygame.Surface((draw_width, draw_height))
+
+    robo_eyes = RoboEyes(draw_surface, width=draw_width, height=draw_height,
+                         bg_color=bg_color, eye_color=eye_color)
+    robo_eyes.begin()
     return window, draw_surface, robo_eyes
 
 
 def main() -> None:
+    """Entry point: parses arguments, starts pygame, and runs the main loop."""
     parser = argparse.ArgumentParser(
-        description="Animated robot eyes for a display.",
+        description="RoboEyes - Animated robot eyes display",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--rotate", type=int, default=0, choices=[0, 90, 180, 270],
                         help="Rotation angle in degrees (default: 0)")
-    parser.add_argument("--bind", type=str, default="127.0.0.1",
-                        help="Bind address for UDP (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=5005,
                         help="UDP port for remote commands (default: 5005)")
+    parser.add_argument("--bind", default="127.0.0.1",
+                        help="Bind address for UDP (default: 127.0.0.1)")
     parser.add_argument("--color", type=parse_color, default="0,255,255",
                         help="Eye color as R,G,B (default: 0,255,255)")
     parser.add_argument("--bgcolor", type=parse_color, default="0,0,0",
@@ -62,111 +77,123 @@ def main() -> None:
                         help="Run in fullscreen mode")
     args = parser.parse_args()
 
-    # Use UDP network socket
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
+        sock.setblocking(False)
         sock.bind((args.bind, args.port))
-        print(f"Listening for commands on UDP: {args.bind}:{args.port}")
-    except OSError as e:
-        print(f"Error binding to socket: {e}")
-        return
+        print(f"Listening for commands on UDP {args.bind}:{args.port}")
 
-    sock.setblocking(False)
+        pygame.init()
+        try:
+            info = pygame.display.Info()
+            desktop_size: tuple[int, int] = (info.current_w, info.current_h)
 
-    pygame.init()
-    try:
-        info = pygame.display.Info()
-        desktop_size: tuple[int, int] = (info.current_w, info.current_h)
+            is_fullscreen: bool = args.fullscreen
+            window, draw_surface, robo_eyes = setup_display(
+                is_fullscreen, args.width, args.height, args.rotate,
+                args.bgcolor, args.color, desktop_size,
+            )
+            robo_eyes.set_shape(Shape.DEFAULT)
+            robo_eyes.set_autoblinker(True, interval=2, variation=3)
+            robo_eyes.set_idle_mode(True, interval=5, variation=5)
+            robo_eyes.set_curiosity(True)
 
-        is_fullscreen: bool = args.fullscreen
-        window, draw_surface, robo_eyes = setup_display(
-            is_fullscreen, args.width, args.height, args.rotate,
-            args.bgcolor, args.color, desktop_size,
-        )
-        robo_eyes.set_shape(Shape.DEFAULT)
-        robo_eyes.set_autoblinker(True, interval=2, variation=3)
-        robo_eyes.set_idle_mode(True, interval=5, variation=5)
-        robo_eyes.set_curiosity(True)
+            show_help = False
+            clock = pygame.time.Clock()
 
-        show_help = False
-        clock = pygame.time.Clock()
-
-        while True:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    return
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
+            while True:
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
                         return
-                    elif event.key == pygame.K_0:
-                        robo_eyes.set_shape(Shape.DEFAULT)
-                    elif event.key == pygame.K_1:
-                        robo_eyes.set_shape(Shape.DROOPY)
-                    elif event.key == pygame.K_2:
-                        robo_eyes.set_shape(Shape.FROWN)
-                    elif event.key == pygame.K_3:
-                        robo_eyes.set_shape(Shape.CHEERFUL)
-                    elif event.key == pygame.K_4:
-                        robo_eyes.set_shape(Shape.SQUINT)
-                    elif event.key == pygame.K_5:
-                        robo_eyes.set_shape(Shape.CLOSED)
-                    elif event.key == pygame.K_c:
-                        robo_eyes.anim_confused()
-                    elif event.key == pygame.K_l:
-                        robo_eyes.anim_laugh()
-                    elif event.key == pygame.K_s:
-                        robo_eyes.anim_breathing()
-                    elif event.key == pygame.K_b:
-                        robo_eyes.blink()
-                    elif event.key == pygame.K_q:
-                        robo_eyes.wink_left()
-                    elif event.key == pygame.K_e:
-                        robo_eyes.wink_right()
-                    elif event.key == pygame.K_LEFT:
-                        robo_eyes.set_position(Position.W)
-                    elif event.key == pygame.K_RIGHT:
-                        robo_eyes.set_position(Position.E)
-                    elif event.key == pygame.K_UP:
-                        robo_eyes.set_position(Position.N)
-                    elif event.key == pygame.K_DOWN:
-                        robo_eyes.set_position(Position.S)
-                    elif event.key == pygame.K_SPACE:
-                        robo_eyes.set_position(Position.CENTER)
-                    elif event.key == pygame.K_f:
-                        show_help = not show_help
-                        clear_cache()
+                    if event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_ESCAPE:
+                            return
+                        elif event.key == pygame.K_0:
+                            robo_eyes.set_shape(Shape.DEFAULT)
+                        elif event.key == pygame.K_1:
+                            robo_eyes.set_shape(Shape.TIRED)
+                        elif event.key == pygame.K_2:
+                            robo_eyes.set_shape(Shape.ANGRY)
+                        elif event.key == pygame.K_3:
+                            robo_eyes.set_shape(Shape.SMILE)
+                        elif event.key == pygame.K_4:
+                            robo_eyes.set_shape(Shape.SQUINT)
+                        elif event.key == pygame.K_5:
+                            robo_eyes.set_shape(Shape.SLEEP)
+                        elif event.key == pygame.K_q:
+                            robo_eyes.wink_left()
+                        elif event.key == pygame.K_w:
+                            robo_eyes.blink()
+                        elif event.key == pygame.K_e:
+                            robo_eyes.wink_right()
+                        elif event.key == pygame.K_r:
+                            robo_eyes.anim_shake()
+                        elif event.key == pygame.K_t:
+                            robo_eyes.anim_bounce()
+                        elif event.key == pygame.K_y:
+                            robo_eyes.anim_breathing()
+                        elif event.key == pygame.K_LEFT:
+                            robo_eyes.set_position(Position.W)
+                        elif event.key == pygame.K_RIGHT:
+                            robo_eyes.set_position(Position.E)
+                        elif event.key == pygame.K_UP:
+                            robo_eyes.set_position(Position.N)
+                        elif event.key == pygame.K_DOWN:
+                            robo_eyes.set_position(Position.S)
+                        elif event.key == pygame.K_SPACE:
+                            robo_eyes.set_position(Position.CENTER)
+                        elif event.key == pygame.K_f:
+                            is_fullscreen = not is_fullscreen
+                            clear_cache()
+                            old = robo_eyes
+                            window, draw_surface, robo_eyes = setup_display(
+                                is_fullscreen, args.width, args.height,
+                                args.rotate, old.bg_color, old.eye_color,
+                                desktop_size,
+                            )
+                            robo_eyes.set_shape(old.current_shape)
+                            robo_eyes.set_autoblinker(
+                                old.autoblinker,
+                                interval=old.blink_interval // 1000,
+                                variation=old.blink_interval_variation // 1000,
+                            )
+                            robo_eyes.set_idle_mode(
+                                old.idle,
+                                interval=old.idle_interval // 1000,
+                                variation=old.idle_interval_variation // 1000,
+                            )
+                            robo_eyes.set_curiosity(old.curious)
+                            robo_eyes.set_cyclops(old.cyclops)
+                        elif event.key == pygame.K_SLASH and (event.mod & pygame.KMOD_SHIFT):
+                            show_help = not show_help
 
-            # Process UDP commands
-            for _ in range(MAX_UDP_MESSAGES_PER_FRAME):
-                try:
-                    data, _ = sock.recvfrom(1024)
+                # Process UDP commands (bounded per frame)
+                for _ in range(MAX_UDP_MESSAGES_PER_FRAME):
                     try:
-                        cmd = json.loads(data.decode())
-                        handle_command(cmd, robo_eyes)
-                    except (json.JSONDecodeError, ValueError):
-                        pass
-                except BlockingIOError:
-                    break
+                        data, _ = sock.recvfrom(1024)
+                        try:
+                            cmd = json.loads(data.decode())
+                            handle_command(cmd, robo_eyes)
+                        except (json.JSONDecodeError, ValueError):
+                            pass
+                    except BlockingIOError:
+                        break
 
-            robo_eyes.update()
+                robo_eyes.update()
 
-            if args.rotate:
-                rotated = pygame.transform.rotate(draw_surface, -args.rotate)
-                window.fill(robo_eyes.bg_color)
-                window.blit(rotated, rotated.get_rect(center=window.get_rect().center))
-            else:
-                window.blit(draw_surface, (0, 0))
+                if args.rotate:
+                    rotated = pygame.transform.rotate(draw_surface, -args.rotate)
+                    window.fill(robo_eyes.bg_color)
+                    window.blit(rotated, rotated.get_rect(center=window.get_rect().center))
+                else:
+                    window.blit(draw_surface, (0, 0))
 
-            if show_help:
-                draw_help_overlay(window)
+                if show_help:
+                    draw_help_overlay(window)
 
-            pygame.display.flip()
-            clock.tick(50)
-    finally:
-        pygame.quit()
+                pygame.display.flip()
+                clock.tick(50)
+        finally:
+            pygame.quit()
     finally:
         sock.close()
-
-
-if __name__ == "__main__":
-    main()

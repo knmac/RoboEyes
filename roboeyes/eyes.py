@@ -35,10 +35,7 @@ class RoboEyes:
         self.screen_height = height
         self.bg_color = bg_color
         self.eye_color = eye_color
-        self._renderer = Renderer(draw_surface, eye_color, bg_color, self)
-
-        # Temporary color override for animations
-        self.temp_color = None
+        self._renderer = Renderer(draw_surface, eye_color, bg_color)
 
         # Shape flags
         self.current_shape: Shape = Shape.DEFAULT
@@ -125,17 +122,17 @@ class RoboEyes:
         # Wink tracking
         self._winking = False
 
-        # Confused animation
-        self.confused = False
-        self.confused_animation_timer = 0
-        self.confused_animation_duration = 500
-        self.confused_toggle = True
+        # Shake animation (horizontal)
+        self.shake = False
+        self.shake_animation_timer = 0
+        self.shake_animation_duration = 500
+        self.shake_toggle = True
 
-        # Laugh animation
-        self.laugh = False
-        self.laugh_animation_timer = 0
-        self.laugh_animation_duration = 500
-        self.laugh_toggle = True
+        # Bounce animation (vertical)
+        self.bounce = False
+        self.bounce_animation_timer = 0
+        self.bounce_animation_duration = 500
+        self.bounce_toggle = True
 
         # Breathing (sleep) animation
         self.breathing = False
@@ -169,11 +166,11 @@ class RoboEyes:
 
     def set_shape(self, shape: Shape) -> None:
         self.current_shape = shape
-        self.tired = shape == Shape.DROOPY
-        self.angry = shape == Shape.FROWN
-        self.happy = shape == Shape.CHEERFUL
+        self.tired = shape == Shape.TIRED
+        self.angry = shape == Shape.ANGRY
+        self.happy = shape == Shape.SMILE
         self.squint = shape == Shape.SQUINT
-        self.sleep = shape == Shape.CLOSED
+        self.sleep = shape == Shape.SLEEP
 
     def set_position(self, position: Position) -> None:
         fx, fy = POSITION_FACTORS[position]
@@ -230,47 +227,21 @@ class RoboEyes:
         self._winking = True
         self.blink(left=False, right=True)
 
-    def anim_confused(self) -> None:
-        self.confused = True
+    def anim_shake(self) -> None:
+        self.shake = True
 
-    def anim_laugh(self) -> None:
-        self.laugh = True
+    def anim_bounce(self) -> None:
+        self.bounce = True
 
     def anim_sleep(self) -> None:
-        """Triggers the breathing (snoring) animation with sleep shape."""
-        self.set_shape(Shape.CLOSED)
+        """Enter sleep mode: sets sleep shape, centers eyes, and starts breathing."""
+        self.set_shape(Shape.SLEEP)
         self.set_position(Position.CENTER)
         self.breathing = True
 
     def anim_breathing(self) -> None:
         """Toggles the breathing animation (works with any shape)."""
         self.breathing = not self.breathing
-
-    # TODO: Add special FX animations for anime chibi style:
-    # def anim_bounce(self) -> None:
-    #     """Cheerful bounce effect for happy emotions (👍, ❤️, 🤩, 🥰)"""
-    #     pass
-    # def anim_sway(self) -> None:
-    #     """Affectionate sway for love emotions (😘, ❤️, 🤗)"""
-    #     pass
-    # def anim_sparkle(self) -> None:
-    #     """Star twinkle effect for excited emotions (👌, 🥳, 🌹)"""
-    #     pass
-    # def anim_wave(self) -> None:
-    #     """Greeting wave effect (👋)"""
-    #     pass
-    # def anim_peace(self) -> None:
-    #     """Victory peace sign (✌️)"""
-    #     pass
-    # def anim_glow(self) -> None:
-    #     """Angelic halo ring effect (🌹)"""
-    #     pass
-    # def anim_tears(self) -> None:
-    #     """Tear drops falling effect (😭)"""
-    #     pass
-    # def anim_dizzy(self) -> None:
-    #     """Confused dizzy spin effect (💩)"""
-    #     pass
 
     def clear_display(self) -> None:
         self.surface.fill(self.bg_color)
@@ -289,15 +260,6 @@ class RoboEyes:
 
     def _screen_constraint_y(self) -> int:
         return self.screen_height - self.left.height_default
-
-    # Temporary color management for animations
-    def set_temp_color(self, color: Color) -> None:
-        """Set temporary eye color for animation. Overrides self.eye_color."""
-        self.temp_color = color
-
-    def clear_temp_color(self) -> None:
-        """Clear temporary color and restore to self.eye_color."""
-        self.temp_color = None
 
     def _update_eye_geometry(self, eye: EyeState) -> None:
         eye.height_current = self._lerp(eye.height_current, eye.height_next + eye.height_offset)
@@ -354,28 +316,27 @@ class RoboEyes:
             self.blink()
             self.blink_timer = current_time + self.blink_interval + random.randint(0, self.blink_interval_variation)
 
-        # Laugh animation
-        if self.laugh:
-            if self.laugh_toggle:
-                self.set_v_flicker(True, int(20 * self.scale)) # Increased intensity
-                self.laugh_animation_timer = current_time
-                self.laugh_toggle = False
-            elif current_time >= self.laugh_animation_timer + 800: # Longer duration
+        # Bounce animation
+        if self.bounce:
+            if self.bounce_toggle:
+                self.set_v_flicker(True, int(10 * self.scale))
+                self.bounce_animation_timer = current_time
+                self.bounce_toggle = False
+            elif current_time >= self.bounce_animation_timer + self.bounce_animation_duration:
                 self.set_v_flicker(False, 0)
-                self.laugh_toggle = True
-                self.laugh = False
+                self.bounce_toggle = True
+                self.bounce = False
 
-        # Confused animation
-        if self.confused:
-            if self.confused_toggle:
-                self.set_h_flicker(True, int(50 * self.scale)) # Increased intensity
-                self.confused_animation_timer = current_time
-                self.confused_toggle = False
-            elif current_time >= self.confused_animation_timer + 1000: # Longer duration
+        # Shake animation
+        if self.shake:
+            if self.shake_toggle:
+                self.set_h_flicker(True, int(40 * self.scale))
+                self.shake_animation_timer = current_time
+                self.shake_toggle = False
+            elif current_time >= self.shake_animation_timer + self.shake_animation_duration:
                 self.set_h_flicker(False, 0)
-                self.confused_toggle = True
-                self.confused = False
-                self.clear_temp_color()
+                self.shake_toggle = True
+                self.shake = False
 
         # Breathing animation
         if self.breathing:
@@ -383,7 +344,6 @@ class RoboEyes:
             offset = int(amp * math.sin(current_time / 600.0))
             self.left.y_next = self.left.y_default + offset
             self.right.y_next = self.right.y_default + offset
-            self.clear_temp_color()  # Always clear temp color for breathing
 
         # Idle animation
         if self.idle and current_time >= self.idle_animation_timer:

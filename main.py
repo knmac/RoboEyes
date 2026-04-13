@@ -1,7 +1,8 @@
 """RoboEyes - Animated robot eyes display with remote control support.
 
 Usage:
-    uv run main.py [OPTIONS]
+    uv run main.py [OPTIONS]           Start the eye display
+    uv run main.py send <JSON> [OPTS]  Send a UDP command to a running instance
 
 Options:
     --rotate {0,90,180,270}   Screen rotation in degrees (default: 0)
@@ -14,60 +15,34 @@ Options:
     --fullscreen              Run in fullscreen mode
 """
 
-import sys
-import argparse
-import socket
 import json
-from roboeyes.app import main as run_app
+import socket
+import sys
 
-def send_command(cmd_str, port=5005, bind_address="127.0.0.1"):
-    try:
-        # Validate JSON
-        json.loads(cmd_str)
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.sendto(cmd_str.encode('utf-8'), (bind_address, port))
-    except Exception as e:
-        print(f"Error sending command: {e}")
-        sys.exit(1)
 
-def main():
-    parser = argparse.ArgumentParser(description="RoboEyes: Animated robot eyes.")
-    subparsers = parser.add_subparsers(dest="command")
+def send_command(json_str: str, host: str = "127.0.0.1", port: int = 5005) -> None:
+    """Send a JSON command string to a running RoboEyes instance via UDP."""
+    json.loads(json_str)  # validate
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.sendto(json_str.encode(), (host, port))
 
-    # 'run' subcommand (or default if no args)
-    run_parser = subparsers.add_parser("run", help="Start the eye display.")
-    run_parser.add_argument("--rotate", type=int, default=0, choices=[0, 90, 180, 270])
-    run_parser.add_argument("--port", type=int, default=5005)
-    run_parser.add_argument("--bind", type=str, default="127.0.0.1")
-    run_parser.add_argument("--color", type=str, default="0,255,255")
-    run_parser.add_argument("--bgcolor", type=str, default="0,0,0")
-    run_parser.add_argument("--width", type=int, default=640)
-    run_parser.add_argument("--height", type=int, default=480)
-    run_parser.add_argument("--fullscreen", action="store_true")
 
-    # 'send' subcommand
-    send_parser = subparsers.add_parser("send", help="Send a command to a running RoboEyes instance.")
-    send_parser.add_argument("json_cmd", help="JSON command string.")
-    send_parser.add_argument("--port", type=int, default=5005)
-    send_parser.add_argument("--bind", type=str, default="127.0.0.1")
-
-    # Handle default 'run' case
-    if len(sys.argv) == 1:
-        run_app()
-        return
-
-    # If first arg is not a subcommand but looks like a flag, assume 'run'
-    if len(sys.argv) > 1 and sys.argv[1].startswith("--") and sys.argv[1] != "--help":
-        run_app()
-        return
-
-    args = parser.parse_args()
-    if args.command == "send":
-        send_command(args.json_cmd, args.port, args.bind)
+def main() -> None:
+    # If first positional arg is "send", handle it directly
+    if len(sys.argv) > 1 and sys.argv[1] == "send":
+        import argparse
+        parser = argparse.ArgumentParser(prog="main.py send",
+                                         description="Send a UDP command to RoboEyes")
+        parser.add_argument("json_cmd", help="JSON command string")
+        parser.add_argument("--port", type=int, default=5005)
+        parser.add_argument("--bind", default="127.0.0.1")
+        args = parser.parse_args(sys.argv[2:])
+        send_command(args.json_cmd, args.bind, args.port)
     else:
-        # Re-parse sys.argv for the run_app's argparse (legacy compatibility)
-        sys.argv.remove("run") if "run" in sys.argv else None
+        # Default: run the display (pass all args through to app.main's argparse)
+        from roboeyes.app import main as run_app
         run_app()
+
 
 if __name__ == "__main__":
     main()

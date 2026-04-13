@@ -12,18 +12,15 @@ from roboeyes.types import Color, EyeState
 class Renderer:
     """Draws eyes and eyelid overlays onto a pygame surface."""
 
-    def __init__(self, surface: pygame.Surface, eye_color: Color, bg_color: Color, robo_eyes = None) -> None:
-        self.robo_eyes = robo_eyes
+    def __init__(self, surface: pygame.Surface, eye_color: Color, bg_color: Color) -> None:
         self.surface = surface
         self.eye_color = eye_color
         self.bg_color = bg_color
 
     def draw_eye(self, eye: EyeState) -> None:
         """Draws a single rounded-rectangle eye."""
-        # Use temp_color if set, otherwise use eye_color
-        use_color = self.robo_eyes.temp_color if self.robo_eyes.temp_color else self.eye_color
         rect = pygame.Rect(eye.x, eye.y, eye.width_current, eye.height_current)
-        pygame.draw.rect(self.surface, use_color, rect,
+        pygame.draw.rect(self.surface, self.eye_color, rect,
                          border_radius=max(eye.border_radius_current, 0))
 
     def draw_x_eye(self, eye: EyeState, direction: str = "left") -> None:
