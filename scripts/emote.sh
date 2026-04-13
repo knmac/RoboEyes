@@ -33,6 +33,7 @@ DURATION=""
 #   laughing     smile     bounce     happy_sound        4  green     (none)
 #   surprised    default   shake      surprised_sound    4  yellow    (none)
 #   witty        smile     wink_left  (none)             3  teal      sparkle
+#   awkward      smile     blink      (none)             4  peach     sweat
 #
 get_emotion() {
     case "$1" in
@@ -46,6 +47,7 @@ get_emotion() {
         laughing)  echo "smile|bounce|happy_sound|4|green|"        ;;
         surprised) echo "default|shake|surprised_sound|4|yellow|"  ;;
         witty)     echo "smile|wink_left||3|teal|sparkle"             ;;
+        awkward)   echo "smile|blink||4|peach|sweat"                 ;;
         *) return 1;;
     esac
 }
@@ -70,7 +72,7 @@ play_sound() {
 usage() {
     echo "Usage: emote.sh <emotion> [OPTIONS]"
     echo ""
-    echo "Emotions: neutral happy tired angry squint sleeping laughing surprised witty"
+    echo "Emotions: neutral happy tired angry squint sleeping laughing surprised witty awkward"
     echo ""
     echo "Options:"
     echo "  --color R,G,B      Override eye color"

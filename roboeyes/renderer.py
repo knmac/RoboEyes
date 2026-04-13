@@ -170,7 +170,7 @@ class Renderer:
         ]
         star_surf = pygame.Surface((r * 2 + 2, r * 2 + 2), pygame.SRCALPHA)
         local_pts = [(x - cx + r + 1, y - cy + r + 1) for x, y in points]
-        pygame.draw.polygon(star_surf, (*self.eye_color, alpha), local_pts)
+        pygame.draw.polygon(star_surf, (255, 255, 100, alpha), local_pts)
         self.surface.blit(star_surf, (cx - r - 1, cy - r - 1))
 
     def draw_sparkle(self, eye: EyeState, scale: float, time_ms: int) -> None:
@@ -191,3 +191,22 @@ class Renderer:
         sr = int(6 * scale)
         self._draw_star(cx + int(14 * scale), cy - int(10 * scale), sr, alpha * 3 // 4)
         self._draw_star(cx + int(22 * scale), cy + int(4 * scale), sr, alpha // 2)
+
+    def draw_sweat(self, eye: EyeState, scale: float, time_ms: int) -> None:
+        """Draws an anime-style sweat drop sliding down the side of an eye."""
+        r = int(14 * scale)
+        cx = eye.x - int(8 * scale)
+        base_y = eye.y + int(4 * scale)
+        travel = int(30 * scale)
+        phase = (time_ms / 1000.0) % 3.0
+        y_off = int(phase / 3.0 * travel)
+        cy = base_y + y_off
+        alpha = max(0, 200 - int(y_off * 150 / travel))
+        color = (100, 160, 255, alpha)
+        drop_surf = pygame.Surface((r * 2 + 2, r * 3 + 2), pygame.SRCALPHA)
+        lx, ly = r + 1, r * 2 + 1
+        pygame.draw.circle(drop_surf, color, (lx, ly), r)
+        pygame.draw.polygon(drop_surf, color, [
+            (lx, 0), (lx - r, ly), (lx + r, ly),
+        ])
+        self.surface.blit(drop_surf, (cx - r - 1, cy))

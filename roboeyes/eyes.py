@@ -432,6 +432,9 @@ class RoboEyes:
         if "sparkle" in self._overlays:
             r.draw_sparkle(self.right if not self.cyclops else self.left,
                            self.scale, current_time)
+        if "sweat" in self._overlays:
+            r.draw_sweat(self.left if not self.cyclops else self.left,
+                         self.scale, current_time)
 
     def _draw_eyelids(self) -> None:
         r = self._renderer
