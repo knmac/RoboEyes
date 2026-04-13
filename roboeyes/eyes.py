@@ -235,7 +235,6 @@ class RoboEyes:
 
     def anim_laugh(self) -> None:
         self.laugh = True
-        self.set_temp_color(Color(255, 100, 100))  # Temporary red tint for laugh
 
     def anim_sleep(self) -> None:
         """Triggers the breathing (snoring) animation with sleep shape."""
@@ -365,7 +364,6 @@ class RoboEyes:
                 self.set_v_flicker(False, 0)
                 self.laugh_toggle = True
                 self.laugh = False
-                self.clear_temp_color()  # Clear temporary color after laugh animation
 
         # Confused animation
         if self.confused:
