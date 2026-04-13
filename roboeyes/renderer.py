@@ -130,7 +130,7 @@ class Renderer:
         else:
             cx = eye.x + eye.width_current - int(4 * scale)
         blush_surf = pygame.Surface((r * 2, r), pygame.SRCALPHA)
-        pygame.draw.ellipse(blush_surf, (*self.eye_color, 120), (0, 0, r * 2, r))
+        pygame.draw.ellipse(blush_surf, (255, 130, 170, 120), (0, 0, r * 2, r))
         self.surface.blit(blush_surf, (cx - r, cy))
 
     def draw_bubbles(self, eye: EyeState, scale: float, time_ms: int) -> None:
@@ -202,7 +202,7 @@ class Renderer:
         y_off = int(phase / 3.0 * travel)
         cy = base_y + y_off
         alpha = max(0, 200 - int(y_off * 150 / travel))
-        color = (100, 160, 255, alpha)
+        color = (80, 180, 255, alpha)
         drop_surf = pygame.Surface((r * 2 + 2, r * 3 + 2), pygame.SRCALPHA)
         lx, ly = r + 1, r * 2 + 1
         pygame.draw.circle(drop_surf, color, (lx, ly), r)

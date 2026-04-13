@@ -71,7 +71,7 @@ echo '{"shape":"smile","look":"w"}' | nc -u 127.0.0.1 5005
 | `cyclops` | `{"cyclops": true}` | Toggle single-eye mode |
 | `idle` | `{"idle": true}` | Toggle idle random movement |
 | `autoblink` | `{"autoblink": true}` | Toggle automatic blinking |
-| `overlay` | `{"overlay": "blush"}` | Set visual overlay (`blush`/`bubbles`/`stress`/`null` to clear) |
+| `overlay` | `{"overlay": "blush"}` | Set visual overlay (`blush`/`bubbles`/`stress`/`sparkle`/`sweat`/`null` to clear) |
 
 Commands can be combined: `{"shape": "angry", "look": "e", "color": [255, 50, 50], "overlay": "stress"}`
 
@@ -95,7 +95,8 @@ A convenience script that bundles shape, animation, overlay, color, and sound in
 | `sleeping` | sleep | breathing | bubbles | lavender |
 | `laughing` | smile | bounce | — | green |
 | `surprised` | default | shake | — | yellow |
-| `witty` | smile | wink_left | — | teal |
+| `witty` | smile | wink_left | sparkle | teal |
+| `awkward` | smile | blink | sweat | peach |
 
 Options: `--color R,G,B`, `--duration SECS`, `--port PORT`, `--bind ADDR`
 
