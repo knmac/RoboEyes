@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""
+Express an emotion using RoboEyes.
+Usage: emote <emotion_name> [--color R,G,B] [--duration SECONDS]
+"""
+
+import sys
+import subprocess
+import time
+import argparse
+import os
+
+# Configuration
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+ROBO_EYES_DIR = os.path.dirname(SCRIPT_DIR)
+SOUNDS_DIR = os.path.join(ROBO_EYES_DIR, "sounds")
+MAIN_PY = os.path.join(ROBO_EYES_DIR, "main.py")
+
+# Mapping table
+EMOTIONS = {
+    "neutral":   {"shape": "default",  "anim": "blink",    "sound": "neutral",   "duration": 0},
+    "happy":     {"shape": "cheerful", "anim": "laugh",    "sound": "happy",     "duration": 4},
+    "concerned": {"shape": "default",  "anim": "blink",    "sound": "sad",       "duration": 4},
+    "tired":     {"shape": "droopy",   "anim": "blink",    "sound": "tired",     "duration": 4},
+    "angry":     {"shape": "frown",    "anim": "blink",    "sound": "angry",     "duration": 4, "color": "255,50,50"},
+    "squint":    {"shape": "squint",   "anim": "blink",    "sound": "squint",    "duration": 4},
+    "sleeping":  {"shape": "closed",   "anim": "breathing","sound": None,        "duration": 0},
+    "laughing":  {"shape": "cheerful", "anim": "laugh",    "sound": "happy",     "duration": 4},
+    "surprised": {"shape": "default",  "anim": "confused", "sound": "surprised", "duration": 4},
+    "scared":    {"shape": "default",  "anim": "confused", "sound": "scared",    "duration": 4},
+}
+
+def play_sound(name):
+    if not name: return
+    sound_path = os.path.join(SOUNDS_DIR, f"{name}.wav")
+    if os.path.exists(sound_path):
+        subprocess.Popen(["paplay", sound_path], stderr=subprocess.DEVNULL)
+
+def send_to_eyes(json_str):
+    subprocess.run(["uv", "run", MAIN_PY, "send", json_str], cwd=ROBO_EYES_DIR)
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("emotion")
+    parser.add_argument("--color")
+    parser.add_argument("--duration", type=int)
+    args = parser.parse_args()
+
+    emotion = EMOTIONS.get(args.emotion)
+    if not emotion:
+        print(f"Unknown emotion: {args.emotion}")
+        print(f"Available: {', '.join(EMOTIONS.keys())}")
+        sys.exit(1)
+
+    # Override defaults
+    shape = emotion["shape"]
+    anim = emotion["anim"]
+    sound = emotion["sound"]
+    duration = args.duration if args.duration is not None else emotion["duration"]
+    color = args.color if args.color else emotion.get("color")
+
+    # Play sound
+    play_sound(sound)
+
+    # Build command
+    cmd = {"shape": shape, "anim": anim}
+    if color:
+        # Convert R,G,B string to list
+        try:
+            cmd["temp_color"] = [int(x) for x in color.split(",")]
+        except:
+            pass
+    
+    import json
+    send_to_eyes(json.dumps(cmd))
+
+    # Auto-reset
+    if duration > 0:
+        # We spawn a background process to wait and reset
+        import subprocess
+        reset_cmd = json.dumps({"shape": "default", "anim": "blink", "temp_color": None})
+        reset_script = f"import time, subprocess; time.sleep({duration}); subprocess.run(['uv', 'run', '{MAIN_PY}', 'send', '{reset_cmd}'], cwd='{ROBO_EYES_DIR}')"
+        subprocess.Popen([sys.executable, "-c", reset_script], start_new_session=True)
+
+if __name__ == "__main__":
+    main()

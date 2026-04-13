@@ -67,6 +67,14 @@ def handle_command(cmd: Any, robo_eyes: RoboEyes) -> None:
         if color:
             robo_eyes.eye_color = color
 
+    if "temp_color" in cmd:
+        if cmd["temp_color"] is None:
+            robo_eyes.clear_temp_color()
+        else:
+            color = validate_color(cmd["temp_color"])
+            if color:
+                robo_eyes.set_temp_color(color)
+
     if "bgcolor" in cmd:
         color = validate_color(cmd["bgcolor"])
         if color:

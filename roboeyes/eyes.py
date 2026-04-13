@@ -357,10 +357,10 @@ class RoboEyes:
         # Laugh animation
         if self.laugh:
             if self.laugh_toggle:
-                self.set_v_flicker(True, int(10 * self.scale))
+                self.set_v_flicker(True, int(20 * self.scale)) # Increased intensity
                 self.laugh_animation_timer = current_time
                 self.laugh_toggle = False
-            elif current_time >= self.laugh_animation_timer + self.laugh_animation_duration:
+            elif current_time >= self.laugh_animation_timer + 800: # Longer duration
                 self.set_v_flicker(False, 0)
                 self.laugh_toggle = True
                 self.laugh = False
@@ -368,14 +368,14 @@ class RoboEyes:
         # Confused animation
         if self.confused:
             if self.confused_toggle:
-                self.set_h_flicker(True, int(40 * self.scale))
+                self.set_h_flicker(True, int(50 * self.scale)) # Increased intensity
                 self.confused_animation_timer = current_time
                 self.confused_toggle = False
-            elif current_time >= self.confused_animation_timer + self.confused_animation_duration:
+            elif current_time >= self.confused_animation_timer + 1000: # Longer duration
                 self.set_h_flicker(False, 0)
                 self.confused_toggle = True
                 self.confused = False
-                self.clear_temp_color()  # Clear temporary color after confused animation
+                self.clear_temp_color()
 
         # Breathing animation
         if self.breathing:

@@ -48,10 +48,6 @@ class Position(IntEnum):
     # glow = 14     # Angelic halo ring (🌹)
     # tears = 15     # Tear drops (😭)
     # dizzy = 16     # Poop confused spin (💩)
-    # TODO: Add temporary color override for animations (temp_color in RoboEyes)
-    # Implement set_temp_color(color) and clear_temp_color() methods
-    # Modify renderer to check for temp_color before drawing
-    # Update anim_* methods to set/clear temp color as needed
 
 
 SHAPE_MAP: dict[str, Shape] = {

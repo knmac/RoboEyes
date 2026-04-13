@@ -46,8 +46,10 @@ def main() -> None:
     )
     parser.add_argument("--rotate", type=int, default=0, choices=[0, 90, 180, 270],
                         help="Rotation angle in degrees (default: 0)")
-    parser.add_argument("--udp-socket", type=str, default="/tmp/roboeyes_udp.sock",
-                        help="Path to RoboEyes Unix domain socket (default: /tmp/roboeyes_udp.sock)")
+    parser.add_argument("--bind", type=str, default="127.0.0.1",
+                        help="Bind address for UDP (default: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=5005,
+                        help="UDP port for remote commands (default: 5005)")
     parser.add_argument("--color", type=parse_color, default="0,255,255",
                         help="Eye color as R,G,B (default: 0,255,255)")
     parser.add_argument("--bgcolor", type=parse_color, default="0,0,0",
@@ -60,19 +62,14 @@ def main() -> None:
                         help="Run in fullscreen mode")
     args = parser.parse_args()
 
-    # Use Unix domain socket
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    # Use UDP network socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        sock.bind(args.udp_socket)
-        print(f"Listening for commands on UDP socket: {args.udp_socket}")
-    except (OSError, FileNotFoundError) as e:
+        sock.bind((args.bind, args.port))
+        print(f"Listening for commands on UDP: {args.bind}:{args.port}")
+    except OSError as e:
         print(f"Error binding to socket: {e}")
-        # Try to clean up and retry
-        import os
-        if os.path.exists(args.udp_socket):
-            os.unlink(args.udp_socket)
-            sock.bind(args.udp_socket)
-            print(f"Created new socket: {args.udp_socket}")
+        return
 
     sock.setblocking(False)
 
@@ -169,9 +166,6 @@ def main() -> None:
         pygame.quit()
     finally:
         sock.close()
-        import os
-        if os.path.exists(args.udp_socket):
-            os.unlink(args.udp_socket)
 
 
 if __name__ == "__main__":
